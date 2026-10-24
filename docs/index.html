@@ -104,7 +104,7 @@
   </div>
 </div>
 
-<script src="config.js?v=5"></script>
+<script src="config.js?v=6"></script>
 <script>
   var DATOS = null;
   var CODIGO = new URLSearchParams(location.search).get('c') || '';
@@ -118,7 +118,7 @@
   var SIN_CONEXION = 'Sin conexión. Revisá internet y probá de nuevo.';
 
   function parametros(pedido) {
-    if (!pedido) return CODIGO ? { accion: 'datos', c: CODIGO } : { accion: 'datos' };
+    if (!pedido) return CODIGO ? { accion: 'datos', codigo: CODIGO } : { accion: 'datos' };
     if (pedido.accion === 'guardar') return { accion: 'guardar', datos: JSON.stringify(pedido.carga) };
     return { accion: pedido.accion, trabajador: pedido.trabajador };
   }
@@ -131,8 +131,8 @@
       opciones.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
       opciones.body = JSON.stringify(pedido);
     } else {
-      // Sin parámetros vacíos: Google responde 400 a "&c=" sin valor
-      url += '?accion=datos' + (CODIGO ? '&c=' + encodeURIComponent(CODIGO) : '');
+      // Google responde 400 Bad Request a un parámetro llamado "c" (vacío o no): se usa "codigo"
+      url += '?accion=datos' + (CODIGO ? '&codigo=' + encodeURIComponent(CODIGO) : '');
     }
     return fetch(url, opciones).then(function (r) {
       return r.text().then(function (t) {

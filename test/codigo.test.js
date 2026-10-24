@@ -98,7 +98,8 @@ test('API del formulario: con link personal viene el nombre; sin link, la lista'
   ctx.prepararMensajes();
   const codigo = hoja('Trabajadores').getRange('D3').getValue();
 
-  const personal = get(ctx, { accion: 'datos', c: codigo });
+  const personal = get(ctx, { accion: 'datos', codigo });
+  assert.strictEqual(get(ctx, { accion: 'datos', c: codigo }).resultado.trabajador, 'Ana Gómez'); // compatibilidad
   assert.strictEqual(personal.ok, true);
   assert.strictEqual(personal.resultado.trabajador, 'Ana Gómez');
   assert.deepStrictEqual(personal.resultado.trabajadores, []);

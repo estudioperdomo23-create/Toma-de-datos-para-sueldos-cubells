@@ -410,7 +410,7 @@ function descargarExcel() {
 
 // La página del formulario (carpeta docs/, publicada en GitHub Pages) habla con este
 // script sin cookies de Google, así no falla en celulares con varias cuentas abiertas.
-//   GET  ?accion=datos&c=CODIGO          -> datos para armar el formulario
+//   GET  ?accion=datos&codigo=CODIGO     -> datos para armar el formulario
 //   POST {accion: 'guardar', carga}      -> guarda la respuesta
 //   POST {accion: 'anterior', trabajador} -> lo que ya cargó en la quincena
 // Safari del iPhone a veces bloquea esas llamadas; entonces la página usa JSONP:
@@ -419,7 +419,8 @@ function descargarExcel() {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.accion === 'datos') {
-    return responder_(function () { return datosFormulario(String(p.c || '').trim()); }, p.callback);
+    // "codigo": Google rechaza (400) los pedidos con un parámetro "c"; se acepta "c" por compatibilidad
+    return responder_(function () { return datosFormulario(String(p.codigo || p.c || '').trim()); }, p.callback);
   }
   if (p.accion === 'guardar') {
     return responder_(function () { return guardarRespuesta(JSON.parse(p.datos || '{}')); }, p.callback);
