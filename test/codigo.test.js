@@ -90,24 +90,38 @@ test('preparar mensajes genera códigos, links personales y botón de WhatsApp',
   assert.match(dialogos.at(-1)[1], /Hola, por favor cargá tus horas/);
 });
 
-test('formulario: con link personal muestra el nombre; sin link, la lista', () => {
+function get(ctx, parametros) { return JSON.parse(ctx.doGet({ parameter: parametros }).texto); }
+function post(ctx, pedido) { return JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(pedido) } }).texto); }
+
+test('API del formulario: con link personal viene el nombre; sin link, la lista', () => {
   const { ctx, hoja } = prepararLibro();
   ctx.prepararMensajes();
   const codigo = hoja('Trabajadores').getRange('D3').getValue();
-  const datos = (html) => JSON.parse(/var DATOS = (.*);/.exec(html)[1]);
 
-  const personal = datos(ctx.doGet({ parameter: { c: codigo } }).html);
-  assert.strictEqual(personal.trabajador, 'Ana Gómez');
-  assert.deepStrictEqual(personal.trabajadores, []);
-  assert.deepStrictEqual(personal.obras, ['Casa Carrasco', 'Edificio Pocitos', 'Local Centro']);
-  assert.strictEqual(personal.esperadas, 96); // 16 al 31/10/2026: viernes 16, 23 y 30 (24 h) + 8 días lun-jue (72 h)
-  assert.strictEqual(personal.desde, '16/10/2026');
+  const personal = get(ctx, { accion: 'datos', c: codigo });
+  assert.strictEqual(personal.ok, true);
+  assert.strictEqual(personal.resultado.trabajador, 'Ana Gómez');
+  assert.deepStrictEqual(personal.resultado.trabajadores, []);
+  assert.deepStrictEqual(personal.resultado.obras, ['Casa Carrasco', 'Edificio Pocitos', 'Local Centro']);
+  assert.strictEqual(personal.resultado.esperadas, 96); // 16 al 31/10/2026: viernes 16, 23 y 30 (24 h) + 8 días lun-jue (72 h)
+  assert.strictEqual(personal.resultado.desde, '16/10/2026');
 
-  const general = datos(ctx.doGet({ parameter: {} }).html);
+  const general = get(ctx, { accion: 'datos' }).resultado;
   assert.strictEqual(general.trabajador, null);
   assert.deepStrictEqual(general.trabajadores, ['Ana Gómez', 'Juan Pérez', 'Luis Rodríguez']);
+  assert.strictEqual(get(ctx, { accion: 'datos', c: 'falso' }).resultado.trabajador, null);
 
-  assert.strictEqual(datos(ctx.doGet({ parameter: { c: 'falso' } }).html).trabajador, null);
+  // Guardar y consultar por POST
+  const ok = post(ctx, { accion: 'guardar', carga: { codigo, items: [{ obra: 'Local Centro', horas: 96 }] } });
+  assert.deepStrictEqual([ok.ok, ok.resultado.trabajador, ok.resultado.total], [true, 'Ana Gómez', 96]);
+  assert.deepStrictEqual(post(ctx, { accion: 'anterior', trabajador: 'Ana Gómez' }).resultado, [{ obra: 'Local Centro', horas: 96 }]);
+  assert.deepStrictEqual(post(ctx, { accion: 'guardar', carga: { trabajador: 'Nadie', items: [] } }),
+    { ok: false, error: 'Elegí tu nombre de la lista.' });
+  assert.strictEqual(post(ctx, { accion: 'otra' }).ok, false);
+
+  // Abrir el link de Apps Script directo lleva a la página
+  hoja('Configuración').getRange('B4').setValue('https://estudio.github.io/horas/');
+  assert.match(ctx.doGet({ parameter: {} }).contenido, /href="https:\/\/estudio.github.io\/horas\/"/);
 });
 
 test('respuestas, reemplazo y resumen por obra con conceptos', () => {

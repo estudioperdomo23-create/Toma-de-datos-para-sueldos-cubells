@@ -43,30 +43,34 @@ trabajador (hoja **Control**). Los feriados que se anotan en **Configuración** 
 | Detalle por trabajador | Horas y conceptos de cada trabajador en cada obra. |
 | Control | Quién respondió, horas cargadas contra horas normales de la quincena. |
 
-## Instalación (una sola vez, unos 10 minutos)
+## Cómo está armado
 
-Hace falta una cuenta de Google. Todo es gratis.
+- **La planilla de Google** guarda todo y hace los cálculos (código en `apps-script/Codigo.gs`).
+- **La página del formulario** (`docs/`) está publicada en GitHub Pages. Le habla a la planilla
+  sin usar las cuentas de Google del celular: así funciona aunque el trabajador tenga varias
+  cuentas de Google abiertas (con el formulario servido directo desde Google eso fallaba).
+- `docs/config.js` tiene el link de la implementación web del Apps Script.
 
-1. **Crear la planilla.** Entrar a [sheets.new](https://sheets.new) y ponerle un nombre, por
-   ejemplo *Horas por obra*.
-2. **Pegar el código.** En la planilla: **Extensiones → Apps Script**.
-   - En el archivo `Código.gs`, borrar todo y pegar el contenido de
-     [`apps-script/Codigo.gs`](apps-script/Codigo.gs).
-   - Tocar **+** → **HTML**, nombrarlo `Formulario` (exactamente así) y pegar el contenido de
-     [`apps-script/Formulario.html`](apps-script/Formulario.html).
-   - Guardar (ícono de disquete).
-3. **Instalar las hojas.** Arriba, elegir la función `instalar` y tocar **Ejecutar**. Google pide
-   permiso la primera vez: *Revisar permisos* → elegir la cuenta → *Configuración avanzada* →
-   *Ir a … (no seguro)* → *Permitir*. Es normal: el código es tuyo y no lo verificó Google.
-4. **Publicar el formulario.** **Implementar → Nueva implementación** → tipo **Aplicación web**:
-   - *Ejecutar como*: **Yo**
-   - *Quién tiene acceso*: **Cualquier usuario** (así los trabajadores no necesitan cuenta de Google)
-   - **Implementar** y copiar la **URL de la aplicación web** (termina en `/exec`).
-5. **Pegar el link.** Volver a la planilla (recargarla para que aparezca el menú **Horas**). En la
-   hoja **Configuración**, pegar la URL en *Link del formulario*.
-6. **Cargar los datos.** Completar las hojas **Obras** y **Trabajadores** (tildar *Activa* /
-   *Activo*). El celular puede ir como `099123456`; se completa el 598 solo. Borrar los renglones
-   de ejemplo.
+## Instalación (una sola vez)
+
+Hace falta una cuenta de Google y hacerlo desde una computadora.
+
+1. **Crear la planilla.** Entrar a [sheets.new](https://sheets.new), ponerle un nombre y en
+   **Archivo → Configuración** elegir la zona horaria **Montevideo**.
+2. **Pegar el código.** **Extensiones → Apps Script**. En `Código.gs` borrar todo y pegar el
+   contenido de [`apps-script/Codigo.gs`](apps-script/Codigo.gs). Guardar.
+3. **Instalar las hojas.** Elegir la función `instalar` y tocar **▶ Ejecutar**. Aceptar los
+   permisos (*Configuración avanzada → Ir a … (no seguro) → Permitir*).
+4. **Publicar el Apps Script.** **Implementar → Nueva implementación → Aplicación web**,
+   *Ejecutar como*: **Yo**, *Quién tiene acceso*: **Cualquier usuario**. Copiar la URL (termina
+   en `/exec`) y ponerla en `docs/config.js`.
+5. **Publicar la página.** En GitHub, en el repositorio: **Settings → Pages → Build and
+   deployment**: *Source* **Deploy from a branch**, elegir la rama y la carpeta **/docs**, **Save**.
+   (GitHub Pages gratis requiere que el repositorio sea público; el repositorio solo tiene código,
+   ningún dato de la planilla.) A los minutos queda en
+   `https://estudioperdomo23-create.github.io/Toma-de-datos-para-sueldos-cubells/`.
+6. **Pegar el link de la página** en la planilla, hoja **Configuración**, *Link del formulario*.
+7. **Cargar los datos** en **Obras** y **Trabajadores** (tildar *Activa* / *Activo*).
 
 ## Uso cada quincena
 
@@ -84,7 +88,8 @@ esas fechas en **Configuración** y usar **Horas → 2. Actualizar resumen**.
 
 ## Cambios en el código
 
-Si se modifica `Codigo.gs` o `Formulario.html` después de publicar: **Implementar → Gestionar
-implementaciones → ✏️ → Versión: Nueva versión → Implementar**. La URL no cambia.
+Si se modifica `Codigo.gs` después de publicar: **Implementar → Gestionar implementaciones → ✏️ →
+Versión: Nueva versión → Implementar**. La URL no cambia, así que `docs/config.js` sigue igual.
+Si en cambio se crea una implementación nueva, hay que poner su URL en `docs/config.js`.
 
 Pruebas automáticas (simulan la planilla): `npm test` (Node 18 o superior).

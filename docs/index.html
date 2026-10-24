@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<base target="_top">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Horas de la quincena</title>
@@ -65,7 +64,9 @@
   <h1>Horas de la quincena</h1>
   <p class="sub" id="periodo"></p>
 
-  <div id="formulario">
+  <div id="cargando" class="panel">Cargando…</div>
+
+  <div id="formulario" hidden>
     <div class="aviso warn" id="yaEnviado" hidden>Ya enviaste tus horas de esta quincena. Si las corregís y enviás de nuevo, se reemplazan.</div>
 
     <section class="panel">
@@ -86,7 +87,7 @@
   <div id="listo" class="listo" hidden></div>
 </main>
 
-<div class="barra" id="barra">
+<div class="barra" id="barra" hidden>
   <div class="dentro">
     <div class="total" id="total"></div>
     <button class="enviar" id="enviar" disabled>Enviar</button>
@@ -103,8 +104,27 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script>
-  var DATOS = <?!= datosJson ?>;
+  var DATOS = null;
+  var CODIGO = new URLSearchParams(location.search).get('c') || '';
+
+  // Habla con el Apps Script de la planilla sin cookies de Google (credentials: 'omit'),
+  // así funciona aunque el celular tenga varias cuentas de Google abiertas.
+  function api(pedido) {
+    var opciones = { credentials: 'omit', redirect: 'follow' };
+    var url = window.API_URL;
+    if (pedido) {
+      opciones.method = 'POST';
+      opciones.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+      opciones.body = JSON.stringify(pedido);
+    } else {
+      url += '?accion=datos&c=' + encodeURIComponent(CODIGO);
+    }
+    return fetch(url, opciones)
+      .then(function (r) { return r.json(); }, function () { throw new Error('Sin conexión. Revisá internet y probá de nuevo.'); })
+      .then(function (r) { if (!r.ok) throw new Error(r.error || 'Hubo un problema. Probá de nuevo.'); return r.resultado; });
+  }
 
   var elegidas = Object.create(null); // obra -> horas (texto)
   var $ = function (id) { return document.getElementById(id); };
@@ -233,14 +253,13 @@
     };
     $('enviar').disabled = true;
     $('enviar').textContent = 'Enviando…';
-    google.script.run
-      .withSuccessHandler(mostrarListo)
-      .withFailureHandler(function (err) {
-        $('error').textContent = (err && err.message) || 'No se pudo enviar. Probá de nuevo.';
+    api({ accion: 'guardar', carga: carga })
+      .then(mostrarListo)
+      .catch(function (err) {
+        $('error').textContent = err.message || 'No se pudo enviar. Probá de nuevo.';
         $('enviar').textContent = 'Enviar';
         actualizarTotal();
-      })
-      .guardarRespuesta(carga);
+      });
   }
 
   function mostrarListo(res) {
@@ -273,16 +292,33 @@
     actualizarTotal();
     var nombre = $('trabajador').value;
     if (!nombre) return;
-    google.script.run.withSuccessHandler(function (items) {
+    api({ accion: 'anterior', trabajador: nombre }).then(function (items) {
       if ($('trabajador').value === nombre) cargarAnterior(items);
-    }).obtenerRespuestaAnterior(nombre);
+    }).catch(function () {});
   });
   $('buscar').addEventListener('input', dibujarObras);
   $('enviar').addEventListener('click', intentarEnviar);
   $('corregir').addEventListener('click', function () { $('confirmar').classList.remove('visible'); });
   $('enviarIgual').addEventListener('click', enviar);
 
-  iniciar();
+  function cargar() {
+    $('cargando').textContent = 'Cargando…';
+    api().then(function (datos) {
+      DATOS = datos;
+      $('cargando').hidden = true;
+      $('formulario').hidden = false;
+      $('barra').hidden = false;
+      iniciar();
+    }).catch(function (err) {
+      $('cargando').innerHTML = '';
+      var p = document.createElement('p'); p.className = 'error'; p.textContent = err.message;
+      var b = document.createElement('button'); b.className = 'enviar'; b.textContent = 'Reintentar';
+      b.addEventListener('click', cargar);
+      $('cargando').appendChild(p); $('cargando').appendChild(b);
+    });
+  }
+
+  cargar();
 </script>
 </body>
 </html>

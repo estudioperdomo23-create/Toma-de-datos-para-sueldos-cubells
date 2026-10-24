@@ -95,18 +95,11 @@ function crearEntorno(opciones = {}) {
       })
     },
     HtmlService: {
-      createHtmlOutput: (contenido) => { const o = { contenido, setWidth: () => o, setHeight: () => o }; return o; },
-      createTemplateFromFile: (nombre) => {
-        const t = {
-          evaluate() {
-            const html = fs.readFileSync(path.join(__dirname, '..', 'apps-script', nombre + '.html'), 'utf8')
-              .replace('<?!= datosJson ?>', t.datosJson);
-            const o = { html, setTitle: () => o, addMetaTag: () => o };
-            return o;
-          }
-        };
-        return t;
-      }
+      createHtmlOutput: (contenido) => { const o = { contenido, setWidth: () => o, setHeight: () => o, setTitle: () => o }; return o; }
+    },
+    ContentService: {
+      MimeType: { JSON: 'JSON' },
+      createTextOutput: (texto) => { const o = { texto, setMimeType: () => o }; return o; }
     },
     PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },

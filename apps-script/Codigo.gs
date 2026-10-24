@@ -200,7 +200,7 @@ function instalar() {
     cfg.getRange('A2:B5').setValues([
       ['Quincena desde', isoAFecha(q.desde)],
       ['Quincena hasta', isoAFecha(q.hasta)],
-      ['Link del formulario', '(pegar acá la URL de la implementación web)'],
+      ['Link del formulario', '(pegar acá el link de la página del formulario)'],
       ['Mensaje de WhatsApp', MENSAJE_PREDETERMINADO]
     ]);
     cfg.getRange('B2:B3').setNumberFormat('dd/mm/yyyy');
@@ -289,7 +289,7 @@ function respuestasDeQuincena(cfg) {
 function prepararMensajes() {
   var cfg = leerConfig();
   if (!/^https:\/\//.test(cfg.link)) {
-    SpreadsheetApp.getUi().alert('Falta el link del formulario', 'Pegá la URL de la implementación web en la hoja "Configuración" (fila "Link del formulario"). Ver README, paso 4.', SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Falta el link del formulario', 'Pegá el link de la página del formulario en la hoja "Configuración" (fila "Link del formulario"). Ver README.', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
   var h = hoja(HOJA.TRABAJADORES);
@@ -408,14 +408,53 @@ function descargarExcel() {
 // Formulario web
 // ---------------------------------------------------------------------------
 
+// La página del formulario (carpeta docs/, publicada en GitHub Pages) habla con este
+// script sin cookies de Google, así no falla en celulares con varias cuentas abiertas.
+//   GET  ?accion=datos&c=CODIGO          -> datos para armar el formulario
+//   POST {accion: 'guardar', carga}      -> guarda la respuesta
+//   POST {accion: 'anterior', trabajador} -> lo que ya cargó en la quincena
+
 function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.accion === 'datos') {
+    return responder_(function () { return datosFormulario(String(p.c || '').trim()); });
+  }
+  // Alguien abrió el link de Apps Script directamente: se lo manda a la página del formulario
+  var link = leerConfig().link;
+  return HtmlService.createHtmlOutput(
+    '<div style="font:18px sans-serif;padding:24px">' +
+    (/^https:\/\//.test(link) && !/script\.google\.com/.test(link)
+      ? '<a target="_top" href="' + escaparHtml(link) + '">Abrir el formulario de horas</a>'
+      : 'El formulario todavía no está configurado.') +
+    '</div>').setTitle('Horas de la quincena');
+}
+
+function doPost(e) {
+  return responder_(function () {
+    var pedido = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (pedido.accion === 'guardar') return guardarRespuesta(pedido.carga);
+    if (pedido.accion === 'anterior') return obtenerRespuestaAnterior(pedido.trabajador);
+    throw new Error('Pedido no válido.');
+  });
+}
+
+function responder_(fn) {
+  var salida;
+  try {
+    salida = { ok: true, resultado: fn() };
+  } catch (err) {
+    salida = { ok: false, error: (err && err.message) || String(err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(salida)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Lo que necesita la página para armar el formulario. Con un código válido, el nombre ya viene elegido. */
+function datosFormulario(codigo) {
   var cfg = leerConfig();
   var lista = trabajadores();
-  var codigo = String((e && e.parameter && e.parameter.c) || '').trim();
   var elegido = null;
   if (codigo) lista.forEach(function (t) { if (t.codigo && t.codigo === codigo) elegido = t.nombre; });
-
-  var datos = {
+  return {
     desde: isoATexto(cfg.desde),
     hasta: isoATexto(cfg.hasta),
     esperadas: cfg.esperadas,
@@ -425,11 +464,6 @@ function doGet(e) {
     codigo: elegido ? codigo : '',
     anterior: elegido ? respuestaAnterior_(cfg, elegido) : null
   };
-  var t = HtmlService.createTemplateFromFile('Formulario');
-  t.datosJson = JSON.stringify(datos).replace(/</g, '\\u003c');
-  return t.evaluate()
-    .setTitle('Horas de la quincena')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function respuestaAnterior_(cfg, trabajador) {
@@ -439,12 +473,12 @@ function respuestaAnterior_(cfg, trabajador) {
   return items.length ? items : null;
 }
 
-/** Lo llama el formulario al elegir un nombre de la lista. */
+/** La pide el formulario al elegir un nombre de la lista. */
 function obtenerRespuestaAnterior(trabajador) {
   return respuestaAnterior_(leerConfig(), String(trabajador));
 }
 
-/** Lo llama el formulario al enviar. Reemplaza lo que el trabajador haya cargado antes en la quincena. */
+/** La pide el formulario al enviar. Reemplaza lo que el trabajador haya cargado antes en la quincena. */
 function guardarRespuesta(carga) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
