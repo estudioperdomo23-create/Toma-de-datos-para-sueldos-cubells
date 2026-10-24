@@ -413,11 +413,19 @@ function descargarExcel() {
 //   GET  ?accion=datos&c=CODIGO          -> datos para armar el formulario
 //   POST {accion: 'guardar', carga}      -> guarda la respuesta
 //   POST {accion: 'anterior', trabajador} -> lo que ya cargó en la quincena
+// Safari del iPhone a veces bloquea esas llamadas; entonces la página usa JSONP:
+//   GET  ?accion=guardar&datos=JSON&callback=fn   (y lo mismo con datos/anterior)
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.accion === 'datos') {
-    return responder_(function () { return datosFormulario(String(p.c || '').trim()); });
+    return responder_(function () { return datosFormulario(String(p.c || '').trim()); }, p.callback);
+  }
+  if (p.accion === 'guardar') {
+    return responder_(function () { return guardarRespuesta(JSON.parse(p.datos || '{}')); }, p.callback);
+  }
+  if (p.accion === 'anterior') {
+    return responder_(function () { return obtenerRespuestaAnterior(p.trabajador); }, p.callback);
   }
   // Alguien abrió el link de Apps Script directamente: se lo manda a la página del formulario
   var link = leerConfig().link;
@@ -438,14 +446,18 @@ function doPost(e) {
   });
 }
 
-function responder_(fn) {
+function responder_(fn, callback) {
   var salida;
   try {
     salida = { ok: true, resultado: fn() };
   } catch (err) {
     salida = { ok: false, error: (err && err.message) || String(err) };
   }
-  return ContentService.createTextOutput(JSON.stringify(salida)).setMimeType(ContentService.MimeType.JSON);
+  var json = JSON.stringify(salida);
+  if (callback && /^[A-Za-z_$][\w$]{0,60}$/.test(callback)) {
+    return ContentService.createTextOutput(callback + '(' + json + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Lo que necesita la página para armar el formulario. Con un código válido, el nombre ya viene elegido. */

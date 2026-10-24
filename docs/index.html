@@ -104,14 +104,26 @@
   </div>
 </div>
 
-<script src="config.js?v=2"></script>
+<script src="config.js?v=3"></script>
 <script>
   var DATOS = null;
   var CODIGO = new URLSearchParams(location.search).get('c') || '';
 
   // Habla con el Apps Script de la planilla sin cookies de Google (credentials: 'omit'),
   // así funciona aunque el celular tenga varias cuentas de Google abiertas.
-  function api(pedido) {
+  // Si el navegador bloquea esa llamada (pasa en Safari del iPhone), usa JSONP.
+  var usarJsonp = false;
+
+  function fallo(mensaje, detalle) { var e = new Error(mensaje); e.detalle = detalle; return e; }
+  var SIN_CONEXION = 'Sin conexión. Revisá internet y probá de nuevo.';
+
+  function parametros(pedido) {
+    if (!pedido) return { accion: 'datos', c: CODIGO };
+    if (pedido.accion === 'guardar') return { accion: 'guardar', datos: JSON.stringify(pedido.carga) };
+    return { accion: pedido.accion, trabajador: pedido.trabajador };
+  }
+
+  function porFetch(pedido) {
     var opciones = { credentials: 'omit', redirect: 'follow' };
     var url = window.API_URL;
     if (pedido) {
@@ -121,15 +133,36 @@
     } else {
       url += '?accion=datos&c=' + encodeURIComponent(CODIGO);
     }
-    function fallo(mensaje, detalle) { var e = new Error(mensaje); e.detalle = detalle; return e; }
-    return fetch(url, opciones)
-      .then(function (r) {
-        return r.text().then(function (t) {
-          try { return JSON.parse(t); }
-          catch (e) { throw fallo('La planilla no respondió bien. Avisale a la oficina.', 'HTTP ' + r.status + ': ' + t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)); }
-        });
-      }, function (e) { throw fallo('Sin conexión. Revisá internet y probá de nuevo.', String(e && e.message || e)); })
-      .then(function (r) { if (!r.ok) throw new Error(r.error || 'Hubo un problema. Probá de nuevo.'); return r.resultado; });
+    return fetch(url, opciones).then(function (r) {
+      return r.text().then(function (t) {
+        try { return JSON.parse(t); }
+        catch (e) { throw fallo('La planilla no respondió bien. Avisale a la oficina.', 'HTTP ' + r.status + ': ' + t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)); }
+      });
+    }, function (e) { var err = fallo(SIN_CONEXION, String(e && e.message || e)); err.bloqueado = true; throw err; });
+  }
+
+  function porJsonp(pedido) {
+    return new Promise(function (resolver, rechazar) {
+      var nombre = 'horasCb' + Date.now() + Math.floor(Math.random() * 1e6);
+      var script = document.createElement('script');
+      var espera = setTimeout(function () { terminar(); rechazar(fallo(SIN_CONEXION, 'jsonp: sin respuesta')); }, 30000);
+      function terminar() { clearTimeout(espera); delete window[nombre]; script.remove(); }
+      window[nombre] = function (r) { terminar(); resolver(r); };
+      script.onerror = function () { terminar(); rechazar(fallo(SIN_CONEXION, 'jsonp: error al cargar')); };
+      var p = parametros(pedido), q = [];
+      Object.keys(p).forEach(function (k) { q.push(k + '=' + encodeURIComponent(p[k] == null ? '' : p[k])); });
+      script.src = window.API_URL + '?' + q.join('&') + '&callback=' + nombre;
+      document.head.appendChild(script);
+    });
+  }
+
+  function api(pedido) {
+    var intento = usarJsonp ? porJsonp(pedido) : porFetch(pedido).catch(function (e) {
+      if (!e.bloqueado) throw e;
+      usarJsonp = true;
+      return porJsonp(pedido);
+    });
+    return intento.then(function (r) { if (!r.ok) throw new Error(r.error || 'Hubo un problema. Probá de nuevo.'); return r.resultado; });
   }
 
   var elegidas = Object.create(null); // obra -> horas (texto)

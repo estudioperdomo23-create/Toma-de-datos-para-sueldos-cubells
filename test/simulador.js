@@ -98,7 +98,7 @@ function crearEntorno(opciones = {}) {
       createHtmlOutput: (contenido) => { const o = { contenido, setWidth: () => o, setHeight: () => o, setTitle: () => o }; return o; }
     },
     ContentService: {
-      MimeType: { JSON: 'JSON' },
+      MimeType: { JSON: 'JSON', JAVASCRIPT: 'JAVASCRIPT' },
       createTextOutput: (texto) => { const o = { texto, setMimeType: () => o }; return o; }
     },
     PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] }) },

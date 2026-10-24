@@ -119,6 +119,14 @@ test('API del formulario: con link personal viene el nombre; sin link, la lista'
     { ok: false, error: 'Elegí tu nombre de la lista.' });
   assert.strictEqual(post(ctx, { accion: 'otra' }).ok, false);
 
+  // JSONP (para Safari del iPhone): lo mismo por GET con callback
+  const js = ctx.doGet({ parameter: { accion: 'guardar', datos: JSON.stringify({ trabajador: 'Juan Pérez', items: [{ obra: 'Casa Carrasco', horas: 8 }] }), callback: 'cb1' } }).texto;
+  assert.match(js, /^cb1\(\{"ok":true,"resultado":\{"trabajador":"Juan Pérez","total":8,/);
+  assert.match(ctx.doGet({ parameter: { accion: 'anterior', trabajador: 'Juan Pérez', callback: 'cb2' } }).texto, /^cb2\(\{"ok":true,"resultado":\[\{"obra":"Casa Carrasco","horas":8\}\]\}\);$/);
+  assert.match(ctx.doGet({ parameter: { accion: 'datos', callback: 'cb3' } }).texto, /^cb3\(\{"ok":true/);
+  // Un callback raro no se ejecuta como código
+  assert.match(ctx.doGet({ parameter: { accion: 'datos', callback: 'alert(1)//' } }).texto, /^\{"ok":true/);
+
   // Abrir el link de Apps Script directo lleva a la página
   hoja('Configuración').getRange('B4').setValue('https://estudio.github.io/horas/');
   assert.match(ctx.doGet({ parameter: {} }).contenido, /href="https:\/\/estudio.github.io\/horas\/"/);
