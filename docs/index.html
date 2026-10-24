@@ -104,7 +104,7 @@
   </div>
 </div>
 
-<script src="config.js"></script>
+<script src="config.js?v=2"></script>
 <script>
   var DATOS = null;
   var CODIGO = new URLSearchParams(location.search).get('c') || '';
@@ -121,8 +121,14 @@
     } else {
       url += '?accion=datos&c=' + encodeURIComponent(CODIGO);
     }
+    function fallo(mensaje, detalle) { var e = new Error(mensaje); e.detalle = detalle; return e; }
     return fetch(url, opciones)
-      .then(function (r) { return r.json(); }, function () { throw new Error('Sin conexión. Revisá internet y probá de nuevo.'); })
+      .then(function (r) {
+        return r.text().then(function (t) {
+          try { return JSON.parse(t); }
+          catch (e) { throw fallo('La planilla no respondió bien. Avisale a la oficina.', 'HTTP ' + r.status + ': ' + t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)); }
+        });
+      }, function (e) { throw fallo('Sin conexión. Revisá internet y probá de nuevo.', String(e && e.message || e)); })
       .then(function (r) { if (!r.ok) throw new Error(r.error || 'Hubo un problema. Probá de nuevo.'); return r.resultado; });
   }
 
@@ -315,6 +321,9 @@
       var b = document.createElement('button'); b.className = 'enviar'; b.textContent = 'Reintentar';
       b.addEventListener('click', cargar);
       $('cargando').appendChild(p); $('cargando').appendChild(b);
+      var d = document.createElement('p'); d.className = 'ayuda';
+      d.textContent = 'Detalle: ' + (err.detalle || '-') + ' · ' + String(window.API_URL || 'sin config').slice(-12);
+      $('cargando').appendChild(d);
     });
   }
 
