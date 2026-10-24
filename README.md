@@ -1,66 +1,90 @@
-# Toma de datos para sueldos — Cubells
+# Horas por obra — Cubells
 
-Herramienta para pasar las horas que los funcionarios mandan por WhatsApp a una planilla Excel.
+Los trabajadores cargan desde el celular las horas de la quincena en cada obra, y la planilla
+arma sola el resumen por obra con los conceptos para sueldos.
 
-Se abre en el navegador, al lado de WhatsApp Web. **No necesita instalación ni internet**, y los
-mensajes no salen de la computadora.
+![Formulario en el celular](docs/formulario.png)
 
-## Uso
+## Cómo funciona
 
-1. Descargar esta carpeta y abrir `index.html` con doble clic (Chrome, Edge o Firefox).
-2. En **WhatsApp Web**, abrir el chat o grupo de las horas, seleccionar con el mouse los mensajes del
-   período (desde el primero hasta el último) y copiar con `Ctrl+C`.
-3. Pegar en el cuadro **Mensajes de WhatsApp** y tocar **Reconocer horas**.
-   - También se puede cargar un chat exportado desde el celular (*Exportar chat → Sin archivos*, `.txt`).
-   - Opcional: elegir el período (desde / hasta) para quedarse solo con esa quincena o mes.
-4. Revisar la tabla. Las filas en amarillo (**Revisar**) son las que la herramienta no pudo entender del
-   todo; se pueden corregir directamente en la tabla, o destildar **Incluir** para dejarlas afuera.
-5. **Descargar Excel**. Para seguir sumando a una planilla anterior, cargarla primero en el paso 3: los
-   registros nuevos se agregan y los que ya estaban no se repiten.
+1. **Pedir las horas.** Desde la planilla (menú **Horas → 1. Preparar mensajes de WhatsApp**) se
+   genera el mensaje con el link. Se manda por WhatsApp: al grupo, o a cada trabajador con un
+   botón **Enviar** que abre WhatsApp con el mensaje ya escrito.
+2. **El trabajador responde.** Toca el link y se abre el formulario. Elige su nombre, marca una o
+   varias obras y pone las horas de cada una. Si el total no coincide con el horario normal de la
+   quincena, se le avisa antes de enviar. Si se equivocó, puede volver a entrar y corregir: la
+   respuesta nueva reemplaza a la anterior.
+3. **Descargar el resumen.** En la hoja **Control** se ve quién falta responder. Cuando están
+   todos, **Horas → 3. Descargar Excel**.
 
-## Qué entiende
+### Conceptos
 
-Cada funcionario puede escribir a su manera. Ejemplos que reconoce:
+| Concepto | Cálculo (por trabajador y por obra) |
+|---|---|
+| Ropa | horas |
+| Transporte | horas |
+| Herramientas | horas |
+| Ticket alimentación | horas ÷ 8 |
+| Descanso pago | horas ÷ 8 |
+| Viático | horas ÷ 8 |
 
-| Mensaje                                  | Resultado                          |
-|------------------------------------------|------------------------------------|
-| `7 a 16` · `de 7:30 a 15:45` · `7hs-16hs` | entrada, salida y horas            |
-| `Entré 7 salí 16` · `entrada 6.30 salida 15` | entrada, salida y horas         |
-| `de 7 a 4`                               | entiende 7 a 16                    |
-| `desde las 22 hasta las 6`               | turno nocturno (8 horas)           |
-| `8 horas` · `9 hs` · `8,5 hs` · `8 horas y media` | total de horas            |
-| `7 a 16 con 30 min de almuerzo`          | descuenta el descanso (8,5 horas)  |
-| `21/10` · `21 de octubre` · `lunes` · `ayer` · `hoy` | fecha del trabajo      |
-| Varios días en un mensaje (uno por renglón, o separados por coma) | un registro por día |
+**Horario normal:** lunes a jueves 9 h, viernes 8 h. Se usa para controlar el total de cada
+trabajador (hoja **Control**). Los feriados que se anotan en **Configuración** no se cuentan.
 
-Si el mensaje no dice la fecha, se usa el día en que se mandó (y se aclara en *Observación*).
+### Hojas de la planilla
 
-Se marca **Revisar** cuando:
-- falta la hora de entrada o de salida;
-- el total indicado no coincide con el horario (`7 a 16 (8 horas)`);
-- el día de la semana no coincide con la fecha (`Lunes 21/10` cuando el 21/10 es miércoles);
-- hay más de un registro del mismo funcionario el mismo día (posible corrección);
-- son más de 16 horas, o la fecha es posterior al mensaje;
-- el mensaje parece hablar de horas pero no se pudo interpretar.
+| Hoja | Para qué |
+|---|---|
+| Configuración | Fechas de la quincena, link del formulario, texto del mensaje, feriados. |
+| Obras | Lista de obras. Solo aparecen en el formulario las que tienen **Activa** tildada. |
+| Trabajadores | Nombre, celular y **Activo**. La herramienta completa el código, el link personal y el botón **Enviar**. |
+| Respuestas | Todo lo que mandan los trabajadores (un renglón por obra). Queda el historial de todas las quincenas. |
+| Resumen por obra | Suma de todos los trabajadores por obra, con los conceptos y el total. |
+| Detalle por trabajador | Horas y conceptos de cada trabajador en cada obra. |
+| Control | Quién respondió, horas cargadas contra horas normales de la quincena. |
 
-Los mensajes que no hablan de horas ("ok", "gracias", fotos) se ignoran.
+## Instalación (una sola vez, unos 10 minutos)
 
-## La planilla Excel
+Hace falta una cuenta de Google. Todo es gratis.
 
-| Hoja        | Contenido |
-|-------------|-----------|
-| **Resumen** | Por funcionario: días con horas, total de horas y registros a revisar. |
-| **Planilla**| Grilla funcionario × día, con total por funcionario. |
-| **Registros** | Un renglón por funcionario y día, con el mensaje original. Es la base: se puede editar a mano. |
+1. **Crear la planilla.** Entrar a [sheets.new](https://sheets.new) y ponerle un nombre, por
+   ejemplo *Horas por obra*.
+2. **Pegar el código.** En la planilla: **Extensiones → Apps Script**.
+   - En el archivo `Código.gs`, borrar todo y pegar el contenido de
+     [`apps-script/Codigo.gs`](apps-script/Codigo.gs).
+   - Tocar **+** → **HTML**, nombrarlo `Formulario` (exactamente así) y pegar el contenido de
+     [`apps-script/Formulario.html`](apps-script/Formulario.html).
+   - Guardar (ícono de disquete).
+3. **Instalar las hojas.** Arriba, elegir la función `instalar` y tocar **Ejecutar**. Google pide
+   permiso la primera vez: *Revisar permisos* → elegir la cuenta → *Configuración avanzada* →
+   *Ir a … (no seguro)* → *Permitir*. Es normal: el código es tuyo y no lo verificó Google.
+4. **Publicar el formulario.** **Implementar → Nueva implementación** → tipo **Aplicación web**:
+   - *Ejecutar como*: **Yo**
+   - *Quién tiene acceso*: **Cualquier usuario** (así los trabajadores no necesitan cuenta de Google)
+   - **Implementar** y copiar la **URL de la aplicación web** (termina en `/exec`).
+5. **Pegar el link.** Volver a la planilla (recargarla para que aparezca el menú **Horas**). En la
+   hoja **Configuración**, pegar la URL en *Link del formulario*.
+6. **Cargar los datos.** Completar las hojas **Obras** y **Trabajadores** (tildar *Activa* /
+   *Activo*). El celular puede ir como `099123456`; se completa el 598 solo. Borrar los renglones
+   de ejemplo.
 
-*Resumen* y *Planilla* son fórmulas sobre *Registros*, así que cualquier corrección o fila agregada a
-mano en *Registros* se refleja sola.
+## Uso cada quincena
 
-## Desarrollo
+1. **Horas → Pasar a la quincena siguiente** (o cambiar las fechas en **Configuración**). Anotar
+   los feriados de la quincena, si hay.
+2. **Horas → 1. Preparar mensajes de WhatsApp**.
+   - *Al grupo:* copiar el mensaje que aparece y pegarlo en el grupo. Cada uno elige su nombre.
+   - *A cada uno:* en **Trabajadores**, tocar **Enviar** en cada fila. Con el link personal el
+     formulario ya sabe quién es y nadie puede cargar por otro.
+3. Mirar la hoja **Control** para ver quién falta y recordarle.
+4. **Horas → 3. Descargar Excel**.
 
-- `parser.js` — reconoce mensajes y horas.
-- `excel.js` — lee y escribe la planilla.
-- `app.js`, `index.html` — la pantalla.
-- `lib/xlsx.full.min.js` — [SheetJS](https://sheetjs.com) 0.18.5 (Apache-2.0), incluida para funcionar sin internet.
+Las respuestas de quincenas anteriores no se pierden: para ver de nuevo un resumen viejo, poner
+esas fechas en **Configuración** y usar **Horas → 2. Actualizar resumen**.
 
-Pruebas: `npm test` (Node 18 o superior).
+## Cambios en el código
+
+Si se modifica `Codigo.gs` o `Formulario.html` después de publicar: **Implementar → Gestionar
+implementaciones → ✏️ → Versión: Nueva versión → Implementar**. La URL no cambia.
+
+Pruebas automáticas (simulan la planilla): `npm test` (Node 18 o superior).

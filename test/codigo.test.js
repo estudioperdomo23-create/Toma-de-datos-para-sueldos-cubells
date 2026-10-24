@@ -1,0 +1,179 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const { crearEntorno } = require('./simulador.js');
+
+const { ctx: G } = crearEntorno();
+
+test('horas normales: lunes a jueves 9 h, viernes 8 h', () => {
+  // 1 al 15 de octubre de 2026: jue 1 ... jue 15 → 9 días lun-jue (81 h) + 2 viernes (16 h)
+  assert.strictEqual(G.horasEsperadas('2026-10-01', '2026-10-15', []), 97);
+  // Semana completa
+  assert.strictEqual(G.horasEsperadas('2026-10-19', '2026-10-25', []), 44);
+  // Con feriado un lunes
+  assert.strictEqual(G.horasEsperadas('2026-10-19', '2026-10-25', ['2026-10-19']), 35);
+  // Fin de semana solo
+  assert.strictEqual(G.horasEsperadas('2026-10-24', '2026-10-25', []), 0);
+});
+
+test('conceptos: ropa, transporte y herramientas = horas; ticket, descanso y viático = horas / 8', () => {
+  assert.deepStrictEqual(Array.from(G.calcularConceptos(44)), [44, 44, 44, 5.5, 5.5, 5.5]);
+  assert.deepStrictEqual(Array.from(G.calcularConceptos(9)), [9, 9, 9, 1.13, 1.13, 1.13]);
+});
+
+test('quincenas', () => {
+  assert.deepStrictEqual({ ...G.quincenaSiguiente('2026-10-15') }, { desde: '2026-10-16', hasta: '2026-10-31' });
+  assert.deepStrictEqual({ ...G.quincenaSiguiente('2026-10-31') }, { desde: '2026-11-01', hasta: '2026-11-15' });
+  assert.deepStrictEqual({ ...G.quincenaSiguiente('2026-12-31') }, { desde: '2027-01-01', hasta: '2027-01-15' });
+  assert.deepStrictEqual({ ...G.quincenaDe('2028-02-20') }, { desde: '2028-02-16', hasta: '2028-02-29' });
+});
+
+test('validación de lo que manda el formulario', () => {
+  const t = ['Ana'], o = ['Obra A', 'Obra B'];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: '40,5' }, { obra: 'Obra B', horas: 4 }] }, t, o))),
+    [{ obra: 'Obra A', horas: 40.5 }, { obra: 'Obra B', horas: 4 }]);
+  assert.throws(() => G.validarCarga({ trabajador: 'Pedro', items: [{ obra: 'Obra A', horas: 1 }] }, t, o), /nombre/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [] }, t, o), /al menos una obra/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra Z', horas: 1 }] }, t, o), /no está en la lista/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: 0 }] }, t, o), /Revisá las horas/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: 1 }, { obra: 'Obra A', horas: 2 }] }, t, o), /repetida/);
+});
+
+test('mensaje y teléfono de WhatsApp', () => {
+  assert.strictEqual(G.telefonoWhatsApp('099 123 456'), '59899123456');
+  assert.strictEqual(G.telefonoWhatsApp('+598 99 123 456'), '59899123456');
+  assert.strictEqual(G.armarMensaje('Hola {nombre}: {link}', { nombre: 'Ana', link: 'https://x' }), 'Hola Ana: https://x');
+});
+
+// ---------------------------------------------------------------------------
+// Flujo completo sobre la planilla simulada
+// ---------------------------------------------------------------------------
+
+function prepararLibro() {
+  const env = crearEntorno();
+  const { ctx, hoja } = env;
+  ctx.instalar();
+  const cfg = hoja('Configuración');
+  cfg.getRange('B2').setValue(ctx.isoAFecha('2026-10-16'));
+  cfg.getRange('B3').setValue(ctx.isoAFecha('2026-10-31'));
+  cfg.getRange('B4').setValue('https://script.google.com/macros/s/XYZ/exec');
+  const obras = hoja('Obras');
+  obras.getRange('A2:B5').setValues([['Edificio Pocitos', true], ['Casa Carrasco', true], ['Local Centro', true], ['Obra terminada', false]]);
+  const trab = hoja('Trabajadores');
+  trab.getRange('A2:C5').setValues([
+    ['Juan Pérez', '099123456', true], ['Ana Gómez', '098765432', true], ['Luis Rodríguez', '', true], ['Ex empleado', '', false]
+  ]);
+  return env;
+}
+
+test('instalar crea las hojas', () => {
+  const { libro } = prepararLibro();
+  assert.deepStrictEqual(libro.getSheets().map(h => h.getName()), [
+    'Configuración', 'Obras', 'Trabajadores', 'Respuestas', 'Resumen por obra', 'Detalle por trabajador', 'Control'
+  ]);
+});
+
+test('preparar mensajes genera códigos, links personales y botón de WhatsApp', () => {
+  const { ctx, hoja, dialogos } = prepararLibro();
+  ctx.prepararMensajes();
+  const trab = hoja('Trabajadores');
+  const codigo = trab.getRange('D2').getValue();
+  assert.match(codigo, /^[0-9a-f]{10}$/);
+  assert.strictEqual(trab.getRange('E2').getValue(), 'https://script.google.com/macros/s/XYZ/exec?c=' + codigo);
+  assert.strictEqual(trab.getRange('F2').getValue(), 'Enviar');
+  const wa = trab.links['2,6'];
+  assert.match(wa, /^https:\/\/wa\.me\/59899123456\?text=/);
+  assert.match(decodeURIComponent(wa.split('text=')[1]), /^Hola Juan, por favor cargá tus horas de la quincena del 16\/10\/2026 al 31\/10\/2026 en este link: https:\/\/script.google.com\/macros\/s\/XYZ\/exec\?c=/);
+  assert.strictEqual(trab.getRange('F4').getValue(), ''); // Luis no tiene celular
+  // Volver a preparar mantiene el mismo código
+  ctx.prepararMensajes();
+  assert.strictEqual(trab.getRange('D2').getValue(), codigo);
+  assert.match(dialogos.at(-1)[1], /Hola, por favor cargá tus horas/);
+});
+
+test('formulario: con link personal muestra el nombre; sin link, la lista', () => {
+  const { ctx, hoja } = prepararLibro();
+  ctx.prepararMensajes();
+  const codigo = hoja('Trabajadores').getRange('D3').getValue();
+  const datos = (html) => JSON.parse(/var DATOS = (.*);/.exec(html)[1]);
+
+  const personal = datos(ctx.doGet({ parameter: { c: codigo } }).html);
+  assert.strictEqual(personal.trabajador, 'Ana Gómez');
+  assert.deepStrictEqual(personal.trabajadores, []);
+  assert.deepStrictEqual(personal.obras, ['Casa Carrasco', 'Edificio Pocitos', 'Local Centro']);
+  assert.strictEqual(personal.esperadas, 96); // 16 al 31/10/2026: viernes 16, 23 y 30 (24 h) + 8 días lun-jue (72 h)
+  assert.strictEqual(personal.desde, '16/10/2026');
+
+  const general = datos(ctx.doGet({ parameter: {} }).html);
+  assert.strictEqual(general.trabajador, null);
+  assert.deepStrictEqual(general.trabajadores, ['Ana Gómez', 'Juan Pérez', 'Luis Rodríguez']);
+
+  assert.strictEqual(datos(ctx.doGet({ parameter: { c: 'falso' } }).html).trabajador, null);
+});
+
+test('respuestas, reemplazo y resumen por obra con conceptos', () => {
+  const { ctx, hoja } = prepararLibro();
+  ctx.prepararMensajes();
+  const codigoAna = hoja('Trabajadores').getRange('D3').getValue();
+
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 60 }, { obra: 'Casa Carrasco', horas: 36 }] });
+  // Ana primero se equivoca y después corrige: queda solo lo último
+  ctx.guardarRespuesta({ codigo: codigoAna, items: [{ obra: 'Edificio Pocitos', horas: 10 }] });
+  const res = ctx.guardarRespuesta({ codigo: codigoAna, items: [{ obra: 'Edificio Pocitos', horas: 80 }, { obra: 'Local Centro', horas: '10,5' }] });
+  assert.strictEqual(res.trabajador, 'Ana Gómez');
+  assert.strictEqual(res.total, 90.5);
+  assert.strictEqual(res.esperadas, 96);
+
+  assert.strictEqual(hoja('Respuestas').getLastRow(), 5); // encabezado + 2 de Juan + 2 de Ana
+
+  assert.throws(() => ctx.guardarRespuesta({ codigo: 'otro', items: [{ obra: 'Local Centro', horas: 1 }] }), /link no es válido/);
+  assert.throws(() => ctx.guardarRespuesta({ trabajador: 'Ex empleado', items: [{ obra: 'Local Centro', horas: 1 }] }), /nombre/);
+  assert.throws(() => ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Obra terminada', horas: 1 }] }), /no está en la lista/);
+
+  const porObra = hoja('Resumen por obra').valores();
+  assert.strictEqual(porObra[0][0], 'Quincena del 16/10/2026 al 31/10/2026');
+  assert.deepStrictEqual(porObra[1], ['Obra', 'Horas', 'Ropa', 'Transporte', 'Herramientas', 'Ticket alimentación', 'Descanso pago', 'Viático', 'Trabajadores']);
+  assert.deepStrictEqual(porObra.slice(2), [
+    ['Casa Carrasco', 36, 36, 36, 36, 4.5, 4.5, 4.5, 1],
+    ['Edificio Pocitos', 140, 140, 140, 140, 17.5, 17.5, 17.5, 2],
+    ['Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1.31, 1.31, 1],
+    ['TOTAL', '=SUM(B3:B5)', '=SUM(C3:C5)', '=SUM(D3:D5)', '=SUM(E3:E5)', '=SUM(F3:F5)', '=SUM(G3:G5)', '=SUM(H3:H5)', '=SUM(I3:I5)']
+  ]);
+
+  assert.deepStrictEqual(hoja('Detalle por trabajador').valores().slice(2), [
+    ['Ana Gómez', 'Edificio Pocitos', 80, 80, 80, 80, 10, 10, 10],
+    ['Ana Gómez', 'Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1.31, 1.31],
+    ['Juan Pérez', 'Casa Carrasco', 36, 36, 36, 36, 4.5, 4.5, 4.5],
+    ['Juan Pérez', 'Edificio Pocitos', 60, 60, 60, 60, 7.5, 7.5, 7.5]
+  ]);
+
+  assert.deepStrictEqual(hoja('Control').valores().slice(2), [
+    ['Ana Gómez', 'Sí', 90.5, 96, -5.5, 'Cargó horas de menos'],
+    ['Juan Pérez', 'Sí', 96, 96, 0, 'OK'],
+    ['Luis Rodríguez', 'No', '', 96, '', 'Falta responder']
+  ]);
+
+  // La respuesta anterior se ofrece para corregir
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.obtenerRespuestaAnterior('Juan Pérez'))),
+    [{ obra: 'Edificio Pocitos', horas: 60 }, { obra: 'Casa Carrasco', horas: 36 }]);
+  assert.strictEqual(ctx.obtenerRespuestaAnterior('Luis Rodríguez'), null);
+});
+
+test('pasar a la quincena siguiente deja el resumen vacío y conserva las respuestas', () => {
+  const { ctx, hoja } = prepararLibro();
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Local Centro', horas: 105 }] });
+  ctx.pasarQuincenaSiguiente();
+  assert.match(hoja('Resumen por obra').getRange('A1').getValue(), /01\/11\/2026 al 15\/11\/2026/);
+  assert.strictEqual(hoja('Resumen por obra').getRange('A3').getValue(), 'Todavía no hay respuestas para esta quincena.');
+  assert.strictEqual(hoja('Respuestas').getLastRow(), 2);
+  // Volver a la quincena anterior muestra de nuevo sus datos
+  hoja('Configuración').getRange('B2').setValue(ctx.isoAFecha('2026-10-16'));
+  hoja('Configuración').getRange('B3').setValue(ctx.isoAFecha('2026-10-31'));
+  ctx.actualizarResumen();
+  assert.strictEqual(hoja('Resumen por obra').getRange('A3').getValue(), 'Local Centro');
+});
+
+test('feriados de la hoja Configuración descuentan horas', () => {
+  const { ctx, hoja } = prepararLibro();
+  hoja('Configuración').getRange('D2').setValue(ctx.isoAFecha('2026-10-19'));
+  assert.strictEqual(ctx.leerConfig().esperadas, 87); // 96 - lunes 19/10
+});
