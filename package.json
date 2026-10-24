@@ -1,0 +1,8 @@
+{
+  "name": "toma-de-datos-para-sueldos-cubells",
+  "private": true,
+  "description": "Toma las horas trabajadas de los mensajes de WhatsApp y arma la planilla Excel para sueldos",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
