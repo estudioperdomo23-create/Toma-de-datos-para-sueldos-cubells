@@ -26,9 +26,9 @@ arma sola el resumen por obra con los conceptos para sueldos.
 | Ropa | horas |
 | Transporte | horas |
 | Herramientas | horas |
-| Ticket alimentación | horas ÷ 8 |
-| Descanso pago | horas ÷ 8 |
-| Viático | horas ÷ 8 |
+| Ticket alimentación | horas ÷ 8 (con decimales) |
+| Descanso pago | horas ÷ 8, redondeado al día más cercano |
+| Viático | horas ÷ 8, redondeado al día más cercano (20% o 60% según la obra) |
 
 **Horas extra:** se muestran aparte (hojas Detalle, Control y al pie del Resumen por obra); no se
 suman a las obras ni a los conceptos.
@@ -93,6 +93,22 @@ Hace falta una cuenta de Google y hacerlo desde una computadora.
 
 Las respuestas de quincenas anteriores no se pierden: para ver de nuevo un resumen viejo, poner
 esas fechas en **Configuración** y usar **Horas → 2. Actualizar resumen**.
+
+## Planillas para el programa de sueldos (JORNAL)
+
+**Horas → 4. Generar planillas para sueldos (JORNAL)** crea en Google Drive una carpeta con un
+archivo por obra, en el formato de importación del programa de sueldos (hoja *Movimientos*):
+centro de costos en A1, códigos de concepto en la fila 1, títulos en la fila 2 y un renglón por
+trabajador (Nº de funcionario, nombre, horas normales, descanso pago, viático 20% o 60%, tickets,
+presentismo semanal, ropa, transporte y herramientas). La ventana tiene un link para descargar
+cada uno en Excel.
+
+Para que salgan completos:
+- **Obras:** columna C *Centro de costos* y casilla D *Viático 60%*.
+- **Trabajadores:** columna H *Nº funcionario* y casilla I *Viático siempre 20%* (para quien va al
+  20% aunque la obra sea de 60%).
+
+Las obras "Otra" salen sin centro de costos (hay que asignarlo a mano) y las horas extra no van.
 
 ## Cambios en el código
 

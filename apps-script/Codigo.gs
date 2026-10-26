@@ -31,9 +31,20 @@ var CONCEPTOS = [
   { nombre: 'Transporte', calc: function (h) { return h; } },
   { nombre: 'Herramientas', calc: function (h) { return h; } },
   { nombre: 'Ticket alimentación', calc: function (h) { return h / HORAS_JORNADA; } },
-  { nombre: 'Descanso pago', calc: function (h) { return h / HORAS_JORNADA; } },
-  { nombre: 'Viático', calc: function (h) { return h / HORAS_JORNADA; } }
+  { nombre: 'Descanso pago', calc: diasTrabajados },
+  { nombre: 'Viático', calc: diasTrabajados }
 ];
+
+/** Descanso pago y viático van por día trabajado: horas ÷ 8 redondeado al día más cercano. */
+function diasTrabajados(h) { return Math.round(h / HORAS_JORNADA); }
+
+// Formato de importación del programa de sueldos (archivo JORNAL, hoja "Movimientos").
+// Fila 1: centro de costos en A1 y códigos de concepto; fila 2: títulos; después un renglón por trabajador.
+var JORNAL_CODIGOS = ['C102', 'C106', 'C108', 'C132', 'C133', 'C152', 'C111', 'C115', 'C114', 'C116', 'C112', 'I601', 'I651', 'C649', 'C518'];
+var JORNAL_TITULOS = ['Horas Normales          ', 'Jornal Feriado NoTrabaja', 'Descanso Pago           ', 'Viatico 20%             ',
+  'Viatico 60%             ', 'Tickets Alimentacion $  ', 'Presentismo Semanal     ', 'Ropa                    ',
+  'Transporte              ', 'Herramientas            ', 'Presentismo Mes Completo', 'Vales                   ',
+  'ANDA CRÉDITO            ', 'Ret Judicial BPC        ', 'SUNCA                   '];
 
 // Obras que el trabajador escribe a mano ("Otra") se guardan con este prefijo
 var PREFIJO_OTRA = 'Otra: ';
@@ -155,10 +166,17 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
     detalle[k] = (detalle[k] || 0) + r.horas;
   });
 
+  // Los conceptos de cada obra son la suma de los de cada trabajador (los días se redondean por trabajador)
+  var conceptosObra = Object.create(null);
+  Object.keys(detalle).forEach(function (k) {
+    var obra = k.split('\u0000')[1];
+    var c = calcularConceptos(redondear(detalle[k]));
+    conceptosObra[obra] = (conceptosObra[obra] || c.map(function () { return 0; })).map(function (v, i) { return v + c[i]; });
+  });
   var obras = Object.keys(porObra).sort(compararTexto);
   var filasObra = obras.map(function (obra) {
     var h = redondear(porObra[obra].horas);
-    return [obra, h].concat(calcularConceptos(h)).concat([Object.keys(porObra[obra].trabajadores).length]);
+    return [obra, h].concat(conceptosObra[obra].map(redondear)).concat([Object.keys(porObra[obra].trabajadores).length]);
   });
 
   var filasDetalle = Object.keys(detalle).map(function (k) {
@@ -184,6 +202,44 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
   });
 
   return { porObra: filasObra, detalle: filasDetalle, control: filasControl, totalExtra: redondear(totalExtra) };
+}
+
+/**
+ * Arma, para cada obra, los renglones del JORNAL del programa de sueldos.
+ * respuestas: [{trabajador, obra, horas}] de la quincena (los de FILA_EXTRA no van).
+ * infoTrabajadores: {nombre: {numero, siempre20}}; infoObras: {obra: {centro, viatico60}}.
+ * Devuelve [{obra, centro, filas: [[nº, nombre, C102..C518]], avisos: []}] ordenado por obra.
+ */
+function armarJornales(respuestas, infoTrabajadores, infoObras) {
+  var porObra = Object.create(null);
+  respuestas.forEach(function (r) {
+    if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
+    var o = porObra[r.obra] = porObra[r.obra] || Object.create(null);
+    o[r.trabajador] = (o[r.trabajador] || 0) + r.horas;
+  });
+  return Object.keys(porObra).sort(compararTexto).map(function (obra) {
+    var io = infoObras[obra] || {};
+    var avisos = [];
+    if (!io.centro) avisos.push('la obra no tiene centro de costos');
+    var filas = Object.keys(porObra[obra]).sort(compararTexto).map(function (nombre) {
+      var it = infoTrabajadores[nombre] || {};
+      if (!it.numero) avisos.push(nombre + ' no tiene Nº de funcionario');
+      var h = redondear(porObra[obra][nombre]);
+      var dias = diasTrabajados(h);
+      var al60 = !!io.viatico60 && !it.siempre20;
+      return [it.numero || '', nombre,
+        h,                         // C102 Horas Normales
+        '',                        // C106 Jornal Feriado NoTrabaja
+        dias,                      // C108 Descanso Pago
+        al60 ? '' : dias,          // C132 Viático 20%
+        al60 ? dias : '',          // C133 Viático 60%
+        redondear(h / HORAS_JORNADA), // C152 Tickets Alimentación
+        h,                         // C111 Presentismo Semanal
+        h, h, h,                   // C115 Ropa, C114 Transporte, C116 Herramientas
+        '', '', '', '', ''];       // C112, I601, I651, C649, C518
+    });
+    return { obra: obra, centro: io.centro || '', filas: filas, avisos: avisos };
+  });
 }
 
 function compararTexto(a, b) { return String(a).localeCompare(String(b), 'es'); }
@@ -230,6 +286,7 @@ function onOpen() {
     .addItem('1. Preparar mensajes de WhatsApp', 'prepararMensajes')
     .addItem('2. Actualizar resumen', 'actualizarResumen')
     .addItem('3. Descargar Excel', 'descargarExcel')
+    .addItem('4. Generar planillas para sueldos (JORNAL)', 'generarJornales')
     .addSeparator()
     .addItem('Pasar a la quincena siguiente', 'pasarQuincenaSiguiente')
     .addItem('Instalar / reparar hojas', 'instalar')
@@ -267,7 +324,10 @@ function instalar() {
     obras.getRange('A2:B3').setValues([['Obra de ejemplo 1', true], ['Obra de ejemplo 2', true]]);
   }
   obras.getRange('B2:B200').insertCheckboxes();
-  obras.setColumnWidth(1, 260);
+  if (!obras.getRange('C1').getValue()) obras.getRange('C1:D1').setValues([['Centro de costos', 'Viático 60%']]).setFontWeight('bold');
+  obras.getRange('C2:C200').setNumberFormat('@');
+  obras.getRange('D2:D200').insertCheckboxes();
+  obras.setColumnWidth(1, 260); obras.setColumnWidth(3, 130);
 
   var trab = asegurarHoja(HOJA.TRABAJADORES, ['Nombre', 'Celular', 'Activo', 'Código', 'Link personal', 'Enviar por WhatsApp']);
   if (trab.getLastRow() < 2) trab.getRange('A2:C2').setValues([['Trabajador de ejemplo', '099123456', true]]);
@@ -275,6 +335,8 @@ function instalar() {
   trab.getRange('B2:B300').setNumberFormat('@');
   if (!trab.getRange('G1').getValue()) trab.getRange('G1').setValue('Cédula').setFontWeight('bold');
   trab.getRange('G2:G300').setNumberFormat('@');
+  if (!trab.getRange('H1').getValue()) trab.getRange('H1:I1').setValues([['Nº funcionario', 'Viático siempre 20%']]).setFontWeight('bold');
+  trab.getRange('I2:I300').insertCheckboxes();
   trab.setColumnWidth(1, 220); trab.setColumnWidth(5, 300); trab.setColumnWidth(6, 150);
 
   asegurarHoja(HOJA.RESPUESTAS, ['Enviado', 'Quincena desde', 'Quincena hasta', 'Trabajador', 'Obra', 'Horas']);
@@ -620,4 +682,56 @@ function guardarRespuesta(carga) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Planillas para el programa de sueldos (una por obra)
+// ---------------------------------------------------------------------------
+
+function generarJornales() {
+  var cfg = leerConfig();
+  var infoTrabajadores = Object.create(null);
+  datosDeHoja(HOJA.TRABAJADORES).forEach(function (r) {
+    var nombre = String(r[0]).trim();
+    if (nombre) infoTrabajadores[nombre] = { numero: r[7] === '' || r[7] == null ? '' : r[7], siempre20: r[8] === true };
+  });
+  var infoObras = Object.create(null);
+  datosDeHoja(HOJA.OBRAS).forEach(function (r) {
+    var obra = String(r[0]).trim();
+    if (obra) infoObras[obra] = { centro: String(r[2] == null ? '' : r[2]).trim(), viatico60: r[3] === true };
+  });
+  var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras);
+  if (!jornales.length) {
+    SpreadsheetApp.getUi().alert('Todavía no hay respuestas para la quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) + '.');
+    return;
+  }
+
+  var hora = Utilities.formatDate(new Date(), zona(), 'dd-MM HH.mm');
+  var carpeta = DriveApp.createFolder('Sueldos ' + isoATexto(cfg.desde).replace(/\//g, '-') + ' al ' +
+    isoATexto(cfg.hasta).replace(/\//g, '-') + ' (generado ' + hora + ')');
+  var filasHtml = jornales.map(function (j) {
+    var nombre = 'JORNAL ' + (j.centro || 'SIN CENTRO') + ' - ' + j.obra;
+    var ss = SpreadsheetApp.create(nombre);
+    var h = ss.getSheets()[0].setName('Movimientos');
+    var ancho = 2 + JORNAL_CODIGOS.length;
+    h.getRange(1, 1, 2, ancho).setNumberFormat('@').setValues([
+      [j.centro, ''].concat(JORNAL_CODIGOS),
+      ['', 'Nombre'].concat(JORNAL_TITULOS)
+    ]);
+    h.getRange(3, 1, j.filas.length, ancho).setValues(j.filas);
+    DriveApp.getFileById(ss.getId()).moveTo(carpeta);
+    var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx';
+    return '<tr><td>' + escaparHtml(j.obra) + '</td><td>' + escaparHtml(j.centro || '—') + '</td><td>' + j.filas.length +
+      '</td><td><a href="' + url + '" target="_blank">Descargar</a></td></tr>' +
+      (j.avisos.length ? '<tr><td colspan="4" style="color:#b3261e;font-size:12px">⚠ ' + escaparHtml(j.avisos.join('; ')) + '</td></tr>' : '');
+  }).join('');
+
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font:13px sans-serif"><p>Quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) +
+    '. Un archivo por obra, con el formato del JORNAL.</p>' +
+    '<table style="border-collapse:collapse;width:100%" cellpadding="4"><tr style="text-align:left"><th>Obra</th><th>Centro</th><th>Trab.</th><th></th></tr>' +
+    filasHtml + '</table><p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a></p>' +
+    '<p style="color:#666">Las horas extra no van en estos archivos (se ven en la hoja Control).</p></div>'
+  ).setWidth(520).setHeight(Math.min(560, 190 + jornales.length * 34));
+  SpreadsheetApp.getUi().showModalDialog(html, 'Planillas para sueldos');
 }

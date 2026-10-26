@@ -77,9 +77,17 @@ function crearEntorno(opciones = {}) {
   const respuestasUi = opciones.respuestasUi || [];
   const props = {};
   const cache = {};
+  const creados = [];
   const ctx = {
     console,
     SpreadsheetApp: {
+      create: (nombre) => {
+        const h = new Hoja('Hoja 1');
+        h.setName = (n) => { h.nombre = n; return h; };
+        const id = 'NUEVO' + creados.length;
+        creados.push({ nombre, hoja: h, id });
+        return { getId: () => id, getSheets: () => [h] };
+      },
       getActiveSpreadsheet: () => libro,
       openById: () => libro,
       newRichTextValue() {
@@ -104,10 +112,15 @@ function crearEntorno(opciones = {}) {
     },
     PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    DriveApp: {
+      createFolder: (n) => ({ getUrl: () => 'https://drive.google.com/carpeta/' + encodeURIComponent(n) }),
+      getFileById: () => ({ moveTo() {} })
+    },
     CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Utilities: {
       formatDate: (d, tz, f) => {
         const s = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        if (f === 'dd-MM HH.mm') return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + ' ' + pad(d.getHours()) + '.' + pad(d.getMinutes());
         if (f !== 'yyyy-MM-dd') throw new Error('formato no simulado: ' + f);
         return s;
       },
@@ -116,7 +129,7 @@ function crearEntorno(opciones = {}) {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Codigo.gs'), 'utf8'), ctx, { filename: 'Codigo.gs' });
-  return { ctx, libro, dialogos, hoja: (n) => libro.getSheetByName(n) };
+  return { ctx, libro, dialogos, creados, hoja: (n) => libro.getSheetByName(n) };
 }
 
 module.exports = { crearEntorno };

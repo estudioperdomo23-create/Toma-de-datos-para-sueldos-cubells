@@ -15,9 +15,10 @@ test('horas normales: lunes a jueves 9 h, viernes 8 h', () => {
   assert.strictEqual(G.horasEsperadas('2026-10-24', '2026-10-25', []), 0);
 });
 
-test('conceptos: ropa, transporte y herramientas = horas; ticket, descanso y viático = horas / 8', () => {
-  assert.deepStrictEqual(Array.from(G.calcularConceptos(44)), [44, 44, 44, 5.5, 5.5, 5.5]);
-  assert.deepStrictEqual(Array.from(G.calcularConceptos(9)), [9, 9, 9, 1.13, 1.13, 1.13]);
+test('conceptos: ropa, transporte y herramientas = horas; ticket = horas / 8; descanso y viático = días (horas / 8 redondeado)', () => {
+  assert.deepStrictEqual(Array.from(G.calcularConceptos(44)), [44, 44, 44, 5.5, 6, 6]);
+  assert.deepStrictEqual(Array.from(G.calcularConceptos(9)), [9, 9, 9, 1.13, 1, 1]);
+  assert.deepStrictEqual(Array.from(G.calcularConceptos(18)), [18, 18, 18, 2.25, 2, 2]); // el ejemplo del JORNAL
 });
 
 test('quincenas', () => {
@@ -168,17 +169,17 @@ test('respuestas, reemplazo y resumen por obra con conceptos', () => {
   assert.strictEqual(porObra[0][0], 'Quincena del 16/10/2026 al 31/10/2026');
   assert.deepStrictEqual(porObra[1], ['Obra', 'Horas', 'Ropa', 'Transporte', 'Herramientas', 'Ticket alimentación', 'Descanso pago', 'Viático', 'Trabajadores']);
   assert.deepStrictEqual(porObra.slice(2), [
-    ['Casa Carrasco', 36, 36, 36, 36, 4.5, 4.5, 4.5, 1],
-    ['Edificio Pocitos', 140, 140, 140, 140, 17.5, 17.5, 17.5, 2],
-    ['Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1.31, 1.31, 1],
+    ['Casa Carrasco', 36, 36, 36, 36, 4.5, 5, 5, 1],
+    ['Edificio Pocitos', 140, 140, 140, 140, 17.5, 18, 18, 2], // días por trabajador: 10 (Ana) + 8 (Juan)
+    ['Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1, 1, 1],
     ['TOTAL', '=SUM(B3:B5)', '=SUM(C3:C5)', '=SUM(D3:D5)', '=SUM(E3:E5)', '=SUM(F3:F5)', '=SUM(G3:G5)', '=SUM(H3:H5)', '=SUM(I3:I5)']
   ]);
 
   assert.deepStrictEqual(hoja('Detalle por trabajador').valores().slice(2), [
     ['Ana Gómez', 'Edificio Pocitos', 80, 80, 80, 80, 10, 10, 10],
-    ['Ana Gómez', 'Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1.31, 1.31],
-    ['Juan Pérez', 'Casa Carrasco', 36, 36, 36, 36, 4.5, 4.5, 4.5],
-    ['Juan Pérez', 'Edificio Pocitos', 60, 60, 60, 60, 7.5, 7.5, 7.5]
+    ['Ana Gómez', 'Local Centro', 10.5, 10.5, 10.5, 10.5, 1.31, 1, 1],
+    ['Juan Pérez', 'Casa Carrasco', 36, 36, 36, 36, 4.5, 5, 5],
+    ['Juan Pérez', 'Edificio Pocitos', 60, 60, 60, 60, 7.5, 8, 8]
   ]);
 
   assert.deepStrictEqual(hoja('Control').valores().slice(2), [
@@ -301,4 +302,43 @@ test('freno a quien prueba muchas cédulas', () => {
   hoja('Trabajadores').getRange('G2').setValue('12345678');
   for (let i = 0; i < 30; i++) assert.strictEqual(get(ctx, { accion: 'datos', cedula: String(10000000 + i) }).ok, false);
   assert.match(get(ctx, { accion: 'datos', cedula: '12345678' }).error, /Demasiados intentos/);
+});
+
+test('JORNAL por obra: formato del programa de sueldos', () => {
+  const respuestas = [
+    { trabajador: 'Pérez Rodríguez, Juan Carlos', obra: 'Summit', horas: 18 },
+    { trabajador: 'Pedro Siempre Veinte', obra: 'Selenza', horas: 44 },
+    { trabajador: 'Ana', obra: 'Selenza', horas: 20 },
+    { trabajador: 'Ana', obra: 'Summit', horas: 76 },
+    { trabajador: 'Ana', obra: 'Horas extra', horas: 5 },
+    { trabajador: 'Pepe', obra: 'Otra: Galpón', horas: 9 }
+  ];
+  const trab = { 'Pérez Rodríguez, Juan Carlos': { numero: 101 }, 'Pedro Siempre Veinte': { numero: 31, siempre20: true }, Ana: { numero: 40 } };
+  const obras = { Summit: { centro: '2' }, Selenza: { centro: 'Selenza', viatico60: true } };
+  const j = JSON.parse(JSON.stringify(G.armarJornales(respuestas, trab, obras)));
+  assert.deepStrictEqual(j.map(x => [x.obra, x.centro]), [['Otra: Galpón', ''], ['Selenza', 'Selenza'], ['Summit', '2']]);
+  // Igual al renglón del ejemplo que mandó la oficina
+  assert.deepStrictEqual(j[2].filas.find(f => f[0] === 101), [101, 'Pérez Rodríguez, Juan Carlos', 18, '', 2, 2, '', 2.25, 18, 18, 18, 18, '', '', '', '', '']);
+  assert.deepStrictEqual(j[2].filas.find(f => f[0] === 40), [40, 'Ana', 76, '', 10, 10, '', 9.5, 76, 76, 76, 76, '', '', '', '', '']);
+  // Selenza va al 60%, salvo quien tiene "Viático siempre 20%"
+  assert.deepStrictEqual(j[1].filas.map(f => [f[1], f[5], f[6]]), [['Ana', '', 3], ['Pedro Siempre Veinte', 6, '']]);
+  // Avisos: obra sin centro y trabajador sin número; las horas extra no entran
+  assert.deepStrictEqual(j[0].avisos, ['la obra no tiene centro de costos', 'Pepe no tiene Nº de funcionario']);
+  assert.ok(!j.some(x => x.obra === 'Horas extra'));
+});
+
+test('generar los archivos JORNAL desde la planilla', () => {
+  const { ctx, hoja, dialogos, creados } = prepararLibro();
+  hoja('Obras').getRange('C2:D3').setValues([['10', true], ['4', false]]);
+  hoja('Trabajadores').getRange('H2:I2').setValues([[101, false]]);
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 18 }, { obra: 'Casa Carrasco', horas: 78 }], extra: 3 });
+  ctx.generarJornales();
+  assert.deepStrictEqual(creados.map(c => c.nombre), ['JORNAL 4 - Casa Carrasco', 'JORNAL 10 - Edificio Pocitos']);
+  const mov = creados[1].hoja;
+  assert.strictEqual(mov.getName(), 'Movimientos');
+  const v = mov.valores();
+  assert.deepStrictEqual(v[0].slice(0, 4), ['10', '', 'C102', 'C106']);
+  assert.deepStrictEqual(v[1].slice(0, 3), ['', 'Nombre', 'Horas Normales          ']);
+  assert.deepStrictEqual(v[2], [101, 'Juan Pérez', 18, '', 2, '', 2, 2.25, 18, 18, 18, 18, '', '', '', '', '']);
+  assert.match(dialogos.at(-1)[1], /export\?format=xlsx/);
 });
