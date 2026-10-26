@@ -282,10 +282,20 @@ function resumir(respuestas, trabajadoresActivos, esperadas, infoObras, tope) {
  * respuestas: [{trabajador, obra, horas}] de la quincena (los de FILA_EXTRA no van).
  * infoTrabajadores: {nombre: {numero, siempre20}}; infoObras: {obra: {centro, viatico60, sinViatico}}.
  * tope: días hábiles de la quincena (máximo de descanso pago y de viático por trabajador).
+ * mesCompleto: nombres de quienes cobran Presentismo Mes Completo (C112 = 1, solo en su obra con más horas).
  * Devuelve [{obra, centro, filas: [[nº, nombre, C102..C518]], avisos: []}] ordenado por obra.
  */
-function armarJornales(respuestas, infoTrabajadores, infoObras, tope) {
+function armarJornales(respuestas, infoTrabajadores, infoObras, tope, mesCompleto) {
   var dias = diasPorTrabajador(respuestas, infoObras, tope == null ? Infinity : tope);
+  // Obra con más horas de cada trabajador en la quincena (empate: la primera por nombre)
+  var obraPrincipal = Object.create(null);
+  Object.keys(dias).forEach(function (n) {
+    obraPrincipal[n] = Object.keys(dias[n]).sort(function (a, b) {
+      return (dias[n][b].horas - dias[n][a].horas) || compararTexto(a, b);
+    })[0];
+  });
+  var conMesCompleto = Object.create(null);
+  (mesCompleto || []).forEach(function (n) { conMesCompleto[n] = true; });
   var porObra = Object.create(null);
   respuestas.forEach(function (r) {
     if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
@@ -312,10 +322,31 @@ function armarJornales(respuestas, infoTrabajadores, infoObras, tope) {
         redondear(h / HORAS_JORNADA), // C152 Tickets Alimentación
         h,                         // C111 Presentismo Semanal
         h, h, h,                   // C115 Ropa, C114 Transporte, C116 Herramientas
-        '', '', '', '', ''];       // C112, I601, I651, C649, C518
+        conMesCompleto[nombre] && obraPrincipal[nombre] === obra ? 1 : '', // C112 Presentismo Mes Completo
+        '', '', '', ''];           // I601, I651, C649, C518
     });
     return { obra: obra, centro: io.centro || '', filas: filas, avisos: avisos };
   });
+}
+
+/** ¿La fecha es el último día de su mes? */
+function esFinDeMes(iso) {
+  var d = isoAFecha(iso);
+  d.setDate(d.getDate() + 1);
+  return d.getDate() === 1;
+}
+
+/**
+ * Quiénes trabajaron todas las horas posibles del mes: horas en obras (sin horas extra) de todas
+ * las respuestas del mes >= horas normales del mes.
+ */
+function trabajadoresMesCompleto(respuestasMes, horasDelMes) {
+  var horas = Object.create(null);
+  respuestasMes.forEach(function (r) {
+    if (r.obra === FILA_EXTRA) return;
+    horas[r.trabajador] = (horas[r.trabajador] || 0) + r.horas;
+  });
+  return Object.keys(horas).filter(function (n) { return horas[n] >= horasDelMes - 0.01; }).sort(compararTexto);
 }
 
 function compararTexto(a, b) { return String(a).localeCompare(String(b), 'es'); }
@@ -488,6 +519,14 @@ function respuestasDeQuincena(cfg) {
   return datosDeHoja(HOJA.RESPUESTAS)
     .filter(function (r) { return aIso(r[1]) === cfg.desde && aIso(r[2]) === cfg.hasta; })
     .map(function (r) { return { enviado: r[0], trabajador: String(r[3]), obra: String(r[4]), horas: Number(r[5]) || 0 }; });
+}
+
+/** Respuestas de todas las quincenas del mes que termina en cfg.hasta. */
+function respuestasDelMes(cfg) {
+  var inicio = cfg.hasta.slice(0, 8) + '01';
+  return datosDeHoja(HOJA.RESPUESTAS)
+    .filter(function (r) { return aIso(r[1]) >= inicio && aIso(r[2]) <= cfg.hasta; })
+    .map(function (r) { return { trabajador: String(r[3]), obra: String(r[4]), horas: Number(r[5]) || 0 }; });
 }
 
 /** Genera el código, el link personal y el botón de WhatsApp de cada trabajador. */
@@ -783,7 +822,16 @@ function generarJornales() {
     var nombre = String(r[0]).trim();
     if (nombre) infoTrabajadores[nombre] = { numero: r[7] === '' || r[7] == null ? '' : r[7], siempre20: r[8] === true };
   });
-  var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras(), cfg.diasHabiles);
+  // Presentismo Mes Completo: solo en la quincena que cierra el mes
+  var mesCompleto = [], textoMes = '';
+  if (esFinDeMes(cfg.hasta)) {
+    var inicioMes = cfg.hasta.slice(0, 8) + '01';
+    var horasDelMes = horasEsperadas(inicioMes, cfg.hasta, cfg.feriados);
+    mesCompleto = trabajadoresMesCompleto(respuestasDelMes(cfg), horasDelMes);
+    textoMes = '<p><b>Presentismo Mes Completo</b> (horas normales del mes: ' + horasDelMes + '): ' +
+      (mesCompleto.length ? escaparHtml(mesCompleto.join(', ')) : 'nadie llegó a las horas del mes') + '.</p>';
+  }
+  var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras(), cfg.diasHabiles, mesCompleto);
   if (!jornales.length) {
     SpreadsheetApp.getUi().alert('Todavía no hay respuestas para la quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) + '.');
     return;
@@ -813,8 +861,8 @@ function generarJornales() {
     '<div style="font:13px sans-serif"><p>Quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) +
     '. Un archivo por obra, con el formato del JORNAL.</p>' +
     '<table style="border-collapse:collapse;width:100%" cellpadding="4"><tr style="text-align:left"><th>Obra</th><th>Centro</th><th>Trab.</th><th></th></tr>' +
-    filasHtml + '</table><p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a></p>' +
+    filasHtml + '</table>' + textoMes + '<p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a></p>' +
     '<p style="color:#666">Las horas extra no van en estos archivos (se ven en la hoja Control).</p></div>'
-  ).setWidth(520).setHeight(Math.min(560, 190 + jornales.length * 34));
+  ).setWidth(520).setHeight(Math.min(600, 190 + jornales.length * 34 + (textoMes ? 60 : 0)));
   SpreadsheetApp.getUi().showModalDialog(html, 'Planillas para sueldos');
 }

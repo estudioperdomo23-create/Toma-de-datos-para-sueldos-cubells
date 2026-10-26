@@ -395,3 +395,48 @@ test('JORNAL: el caso de la oficina (10 h en Gala, Selenza y Chacho)', () => {
     ['Selenza', 1, '', 1, 1.25]
   ]);
 });
+
+test('Presentismo Mes Completo en la quincena que cierra el mes', () => {
+  assert.strictEqual(G.esFinDeMes('2026-10-31'), true);
+  assert.strictEqual(G.esFinDeMes('2026-10-15'), false);
+  assert.strictEqual(G.esFinDeMes('2028-02-29'), true);
+  // Octubre 2026: 1-15 = 97 h, 16-31 = 96 h -> 193 h
+  assert.strictEqual(G.horasEsperadas('2026-10-01', '2026-10-31', []), 193);
+  const mes = [
+    { trabajador: 'Ana', obra: 'Summit', horas: 97 }, { trabajador: 'Ana', obra: 'Summit', horas: 60 },
+    { trabajador: 'Ana', obra: 'Gala', horas: 36 },
+    { trabajador: 'Beto', obra: 'Summit', horas: 97 }, { trabajador: 'Beto', obra: 'Summit', horas: 90 },
+    { trabajador: 'Beto', obra: 'Horas extra', horas: 10 } // las extra no cuentan
+  ];
+  assert.deepStrictEqual(Array.from(G.trabajadoresMesCompleto(mes, 193)), ['Ana']);
+
+  // Va un 1 en C112 solo en la obra con más horas de la quincena
+  const quincena = [{ trabajador: 'Ana', obra: 'Summit', horas: 60 }, { trabajador: 'Ana', obra: 'Gala', horas: 36 },
+    { trabajador: 'Beto', obra: 'Summit', horas: 90 }];
+  const j = JSON.parse(JSON.stringify(G.armarJornales(quincena, {}, { Gala: {}, Summit: {} }, 11, ['Ana'])));
+  const c112 = (obra, n) => j.find(x => x.obra === obra).filas.find(f => f[1] === n)[12];
+  assert.deepStrictEqual([c112('Summit', 'Ana'), c112('Gala', 'Ana'), c112('Summit', 'Beto')], [1, '', '']);
+});
+
+test('generar JORNAL a fin de mes pone el presentismo del mes', () => {
+  const { ctx, hoja, dialogos, creados } = prepararLibro();
+  const cfg = hoja('Configuración');
+  // Primera quincena de octubre
+  cfg.getRange('B2').setValue(ctx.isoAFecha('2026-10-01'));
+  cfg.getRange('B3').setValue(ctx.isoAFecha('2026-10-15'));
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 97 }] });
+  ctx.guardarRespuesta({ trabajador: 'Ana Gómez', items: [{ obra: 'Edificio Pocitos', horas: 80 }] });
+  ctx.generarJornales(); // primera quincena: no va
+  assert.doesNotMatch(dialogos.at(-1)[1], /Presentismo Mes Completo/);
+  assert.strictEqual(creados.at(-1).hoja.valores()[2][12], '');
+  // Segunda quincena
+  cfg.getRange('B2').setValue(ctx.isoAFecha('2026-10-16'));
+  cfg.getRange('B3').setValue(ctx.isoAFecha('2026-10-31'));
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 96 }] });
+  ctx.guardarRespuesta({ trabajador: 'Ana Gómez', items: [{ obra: 'Edificio Pocitos', horas: 96 }] });
+  creados.length = 0;
+  ctx.generarJornales();
+  assert.match(dialogos.at(-1)[1], /Presentismo Mes Completo<\/b> \(horas normales del mes: 193\): Juan Pérez\./);
+  const filas = creados[0].hoja.valores().slice(2);
+  assert.deepStrictEqual(filas.map(f => [f[1], f[12]]), [['Ana Gómez', ''], ['Juan Pérez', 1]]);
+});

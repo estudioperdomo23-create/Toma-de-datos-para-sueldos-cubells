@@ -115,6 +115,12 @@ Para que salgan completos:
 
 Las obras "Otra" salen sin centro de costos (hay que asignarlo a mano) y las horas extra no van.
 
+**Presentismo Mes Completo (columna M):** en la quincena que termina el último día del mes, lleva
+un **1** quien trabajó todas las horas normales del mes (sus horas en obras de las dos quincenas,
+sin horas extra, llegan a lunes a jueves 9 h y viernes 8 h del mes, sin feriados). Va solo en la
+planilla de su obra con más horas en la quincena. Para que el cálculo sea correcto, en
+Configuración tienen que estar anotados los feriados de **todo el mes**.
+
 ## Cambios en el código
 
 Si se modifica `Codigo.gs` después de publicar: **Implementar → Gestionar implementaciones → ✏️ →
