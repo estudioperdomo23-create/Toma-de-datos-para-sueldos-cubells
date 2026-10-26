@@ -44,7 +44,10 @@ var MENSAJE_PREDETERMINADO =
   'Hola {nombre}, por favor cargá tus horas de la quincena del {desde} al {hasta} en este link: {link}';
 
 // Filas fijas de la hoja Configuración (columna B)
-var CFG = { DESDE: 2, HASTA: 3, LINK: 4, MENSAJE: 5 };
+var CFG = { DESDE: 2, HASTA: 3, LINK: 4, MENSAJE: 5, PEDIR_CEDULA: 6 };
+
+// Intentos de cédula equivocados tolerados (en total) cada 10 minutos, para frenar a quien pruebe números
+var MAX_FALLOS_CEDULA = 30;
 
 // ---------------------------------------------------------------------------
 // Cálculos (sin acceso a la planilla; se prueban en test/)
@@ -191,6 +194,15 @@ function armarMensaje(plantilla, datos) {
   });
 }
 
+/** La cédula solo con dígitos: "1.234.567-8" -> "12345678". */
+function normalizarCedula(v) { return String(v == null ? '' : v).replace(/\D/g, ''); }
+
+function buscarPorCedula(lista, cedula) {
+  var c = normalizarCedula(cedula);
+  if (c.length < 6) return null;
+  return lista.filter(function (t) { return t.cedula && t.cedula === c; })[0] || null;
+}
+
 /** Deja solo los dígitos del teléfono; si es un celular uruguayo local (09...), agrega 598. */
 function telefonoWhatsApp(tel) {
   var t = String(tel || '').replace(/\D/g, '');
@@ -240,9 +252,14 @@ function instalar() {
     ]);
     cfg.getRange('B2:B3').setNumberFormat('dd/mm/yyyy');
     cfg.getRange('D2:D40').setNumberFormat('dd/mm/yyyy');
-    cfg.getRange('A7').setValue('Horario normal: lunes a jueves 9 h, viernes 8 h. Ticket, descanso pago y viático = horas ÷ 8.')
+    cfg.getRange('A8').setValue('Horario normal: lunes a jueves 9 h, viernes 8 h. Ticket, descanso pago y viático = horas ÷ 8.')
       .setFontStyle('italic');
     cfg.setColumnWidth(1, 170); cfg.setColumnWidth(2, 420); cfg.setColumnWidth(4, 190);
+  }
+
+  if (!cfg.getRange(CFG.PEDIR_CEDULA, 1).getValue()) {
+    cfg.getRange(CFG.PEDIR_CEDULA, 1, 1, 2).setValues([['Pedir cédula (link general)', true]]);
+    cfg.getRange(CFG.PEDIR_CEDULA, 2).insertCheckboxes();
   }
 
   var obras = asegurarHoja(HOJA.OBRAS, ['Obra', 'Activa']);
@@ -256,6 +273,8 @@ function instalar() {
   if (trab.getLastRow() < 2) trab.getRange('A2:C2').setValues([['Trabajador de ejemplo', '099123456', true]]);
   trab.getRange('C2:C300').insertCheckboxes();
   trab.getRange('B2:B300').setNumberFormat('@');
+  if (!trab.getRange('G1').getValue()) trab.getRange('G1').setValue('Cédula').setFontWeight('bold');
+  trab.getRange('G2:G300').setNumberFormat('@');
   trab.setColumnWidth(1, 220); trab.setColumnWidth(5, 300); trab.setColumnWidth(6, 150);
 
   asegurarHoja(HOJA.RESPUESTAS, ['Enviado', 'Quincena desde', 'Quincena hasta', 'Trabajador', 'Obra', 'Horas']);
@@ -291,6 +310,7 @@ function leerConfig() {
     hasta: hasta,
     link: String(cfg.getRange(CFG.LINK, 2).getValue()).trim(),
     mensaje: String(cfg.getRange(CFG.MENSAJE, 2).getValue()),
+    pedirCedula: cfg.getRange(CFG.PEDIR_CEDULA, 2).getValue() === true,
     feriados: feriados,
     esperadas: horasEsperadas(desde, hasta, feriados)
   };
@@ -311,7 +331,7 @@ function obrasActivas() {
 function trabajadores() {
   return datosDeHoja(HOJA.TRABAJADORES)
     .filter(function (r) { return String(r[0]).trim() && r[2] === true; })
-    .map(function (r) { return { nombre: String(r[0]).trim(), celular: r[1], codigo: String(r[3]).trim() }; });
+    .map(function (r) { return { nombre: String(r[0]).trim(), celular: r[1], codigo: String(r[3]).trim(), cedula: normalizarCedula(r[6]) }; });
 }
 
 function respuestasDeQuincena(cfg) {
@@ -347,14 +367,20 @@ function prepararMensajes() {
     return [f[2] ? v.setLinkUrl(f[2]).build() : v.build()];
   }));
 
+  var sinCedula = cfg.pedirCedula
+    ? trabajadores().filter(function (t) { return !t.cedula; }).map(function (t) { return t.nombre; })
+    : [];
   var general = armarMensaje(cfg.mensaje, { nombre: '', desde: isoATexto(cfg.desde), hasta: isoATexto(cfg.hasta), link: cfg.link })
     .replace(/^Hola\s*,/, 'Hola,');
   var html = HtmlService.createHtmlOutput(
     '<div style="font:14px sans-serif">' +
     '<p><b>Para cada trabajador:</b> en la hoja "Trabajadores", tocá <i>Enviar</i> en su fila. Se abre WhatsApp con el mensaje y su link personal listos; solo tenés que darle enviar.</p>' +
-    '<p><b>Para el grupo:</b> copiá este mensaje (cada uno elige su nombre en el formulario):</p>' +
-    '<textarea style="width:100%;height:110px" onclick="this.select()">' + escaparHtml(general) + '</textarea></div>'
-  ).setWidth(460).setHeight(300);
+    '<p><b>Para el grupo o una lista de difusión:</b> copiá este mensaje (' +
+    (cfg.pedirCedula ? 'cada uno pone su cédula en el formulario' : 'cada uno elige su nombre en el formulario') + '):</p>' +
+    '<textarea style="width:100%;height:110px" onclick="this.select()">' + escaparHtml(general) + '</textarea>' +
+    (sinCedula.length ? '<p style="color:#b3261e"><b>Ojo:</b> sin cédula cargada en "Trabajadores" (no van a poder entrar con el link general): ' +
+      escaparHtml(sinCedula.join(', ')) + '</p>' : '') + '</div>'
+  ).setWidth(460).setHeight(sinCedula.length ? 360 : 300);
   SpreadsheetApp.getUi().showModalDialog(html, 'Mensajes de la quincena listos');
 }
 
@@ -460,7 +486,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.accion === 'datos') {
     // "codigo": Google rechaza (400) los pedidos con un parámetro "c"; se acepta "c" por compatibilidad
-    return responder_(function () { return datosFormulario(String(p.codigo || p.c || '').trim()); }, p.callback);
+    return responder_(function () { return datosFormulario(String(p.codigo || p.c || '').trim(), p.cedula); }, p.callback);
   }
   if (p.accion === 'guardar') {
     return responder_(function () { return guardarRespuesta(JSON.parse(p.datos || '{}')); }, p.callback);
@@ -501,23 +527,43 @@ function responder_(fn, callback) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Lo que necesita la página para armar el formulario. Con un código válido, el nombre ya viene elegido. */
-function datosFormulario(codigo) {
+/**
+ * Lo que necesita la página para armar el formulario. Con un código (link personal) o una cédula
+ * válidos, el nombre ya viene elegido. Si la planilla pide cédula, sin ella no se muestra la lista.
+ */
+function datosFormulario(codigo, cedula) {
   var cfg = leerConfig();
   var lista = trabajadores();
   var elegido = null;
-  if (codigo) lista.forEach(function (t) { if (t.codigo && t.codigo === codigo) elegido = t.nombre; });
+  if (codigo) {
+    lista.forEach(function (t) { if (t.codigo && t.codigo === codigo) elegido = t.nombre; });
+  } else if (cedula) {
+    elegido = identificarPorCedula_(lista, cedula).nombre;
+  }
   return {
-    version: 2, // 2: admite obras "Otra" y horas extra
+    version: 3, // 2: admite obras "Otra" y horas extra; 3: identificación por cédula
     desde: isoATexto(cfg.desde),
     hasta: isoATexto(cfg.hasta),
     esperadas: cfg.esperadas,
     obras: obrasActivas(),
-    trabajadores: elegido ? [] : lista.map(function (t) { return t.nombre; }).sort(compararTexto),
+    pideCedula: cfg.pedirCedula && !elegido,
+    trabajadores: elegido || cfg.pedirCedula ? [] : lista.map(function (t) { return t.nombre; }).sort(compararTexto),
     trabajador: elegido,
-    codigo: elegido ? codigo : '',
+    codigo: elegido && codigo ? codigo : '',
     anterior: elegido ? respuestaAnterior_(cfg, elegido) : null
   };
+}
+
+function identificarPorCedula_(lista, cedula) {
+  var cache = CacheService.getScriptCache();
+  var fallos = Number(cache.get('fallosCedula') || 0);
+  if (fallos >= MAX_FALLOS_CEDULA) throw new Error('Demasiados intentos. Probá de nuevo en unos minutos.');
+  var t = buscarPorCedula(lista, cedula);
+  if (!t) {
+    cache.put('fallosCedula', String(fallos + 1), 600);
+    throw new Error('No encontramos esa cédula. Revisala o avisale a la oficina.');
+  }
+  return t;
 }
 
 function respuestaAnterior_(cfg, trabajador) {
@@ -527,9 +573,11 @@ function respuestaAnterior_(cfg, trabajador) {
   return items.length ? items : null;
 }
 
-/** La pide el formulario al elegir un nombre de la lista. */
+/** La pide el formulario al elegir un nombre de la lista (no se ofrece si la planilla pide cédula). */
 function obtenerRespuestaAnterior(trabajador) {
-  return respuestaAnterior_(leerConfig(), String(trabajador));
+  var cfg = leerConfig();
+  if (cfg.pedirCedula) throw new Error('Ingresá tu cédula.');
+  return respuestaAnterior_(cfg, String(trabajador));
 }
 
 /** La pide el formulario al enviar. Reemplaza lo que el trabajador haya cargado antes en la quincena. */
@@ -543,6 +591,10 @@ function guardarRespuesta(carga) {
       var porCodigo = lista.filter(function (t) { return t.codigo === carga.codigo; })[0];
       if (!porCodigo) throw new Error('El link no es válido. Pedí uno nuevo.');
       carga.trabajador = porCodigo.nombre;
+    } else if (carga && carga.cedula) {
+      carga.trabajador = identificarPorCedula_(lista, carga.cedula).nombre;
+    } else if (cfg.pedirCedula) {
+      throw new Error('Ingresá tu cédula.');
     }
     var carga2 = validarCarga(carga, lista.map(function (t) { return t.nombre; }), obrasActivas());
     var items = carga2.items;

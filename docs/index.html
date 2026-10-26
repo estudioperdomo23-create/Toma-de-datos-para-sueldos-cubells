@@ -40,6 +40,8 @@
   .otra .horas { display: flex; padding: 10px 0 0; }
   .quitar { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; padding: 6px; }
   button.agregar { width: 100%; margin-top: 8px; padding: 12px; font: inherit; border: 1px dashed var(--border); border-radius: 10px; background: none; color: var(--accent); font-weight: 600; }
+  #cedula { width: 100%; font: inherit; font-size: 20px; letter-spacing: .5px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
+  #cedulaPanel .enviar { width: 100%; margin-top: 4px; }
   #extraPanel .horas { display: flex; align-items: center; gap: 10px; padding: 0; }
   .barra { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
   .barra .dentro { max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
@@ -73,12 +75,21 @@
 
   <div id="cargando" class="panel">Cargando…</div>
 
+  <section class="panel" id="cedulaPanel" hidden>
+    <label class="titulo" for="cedula">Ingresá tu cédula</label>
+    <input type="text" inputmode="numeric" autocomplete="off" id="cedula" placeholder="Ej: 1.234.567-8">
+    <p class="ayuda">Así el formulario sabe quién sos. Con o sin puntos y guion.</p>
+    <p class="error" id="cedulaError" role="alert"></p>
+    <button class="enviar" id="cedulaContinuar">Continuar</button>
+  </section>
+
   <div id="formulario" hidden>
     <div class="aviso warn" id="yaEnviado" hidden>Ya enviaste tus horas de esta quincena. Si las corregís y enviás de nuevo, se reemplazan.</div>
 
     <section class="panel">
       <label class="titulo" for="trabajador">¿Quién sos?</label>
       <div id="nombreFijo" class="nombre" hidden></div>
+      <button type="button" class="quitar" id="noSoyYo" hidden>¿No sos vos? Cambiar cédula</button>
       <select id="trabajador"><option value="">Elegí tu nombre…</option></select>
     </section>
 
@@ -127,6 +138,7 @@
 <script src="config.js?v=8"></script>
 <script>
   var DATOS = null;
+  var CEDULA = ''; // cédula con la que se identificó (link general)
   var CODIGO = new URLSearchParams(location.search).get('c') || '';
 
   // Habla con el Apps Script de la planilla sin cookies de Google (credentials: 'omit'),
@@ -139,6 +151,7 @@
 
   function parametros(pedido) {
     if (!pedido) return CODIGO ? { accion: 'datos', codigo: CODIGO } : { accion: 'datos' };
+    if (pedido.accion === 'datos') return { accion: 'datos', cedula: pedido.cedula };
     if (pedido.accion === 'guardar') return { accion: 'guardar', datos: JSON.stringify(pedido.carga) };
     return { accion: pedido.accion, trabajador: pedido.trabajador };
   }
@@ -146,7 +159,9 @@
   function porFetch(pedido) {
     var opciones = { credentials: 'omit', redirect: 'follow' };
     var url = window.API_URL;
-    if (pedido) {
+    if (pedido && pedido.accion === 'datos') {
+      url += '?accion=datos&cedula=' + encodeURIComponent(pedido.cedula);
+    } else if (pedido) {
       opciones.method = 'POST';
       opciones.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
       opciones.body = JSON.stringify(pedido);
@@ -199,12 +214,17 @@
   function iniciar() {
     $('periodo').textContent = 'Del ' + DATOS.desde + ' al ' + DATOS.hasta +
       ' · ' + DATOS.esperadas + ' horas normales (lunes a jueves 9 h, viernes 8 h)';
+    var pide = !!DATOS.pideCedula;
+    $('cedulaPanel').hidden = !pide;
+    $('formulario').hidden = $('barra').hidden = pide;
+    if (pide) { $('cedula').focus(); return; }
     if (DATOS.trabajador) {
       $('nombreFijo').textContent = DATOS.trabajador;
       $('nombreFijo').hidden = false;
       $('trabajador').hidden = true;
+      $('noSoyYo').hidden = !CEDULA;
       if (DATOS.anterior) cargarAnterior(DATOS.anterior);
-    } else {
+    } else if ($('trabajador').options.length === 1) {
       DATOS.trabajadores.forEach(function (n) {
         var o = document.createElement('option'); o.value = n; o.textContent = n; $('trabajador').appendChild(o);
       });
@@ -213,6 +233,7 @@
     // "Otra" y horas extra solo si la planilla ya tiene el código que los guarda
     $('agregarOtra').hidden = $('extraPanel').hidden = !(DATOS.version >= 2);
     dibujarObras();
+    dibujarOtras();
     actualizarTotal();
   }
 
@@ -363,6 +384,7 @@
     $('confirmar').classList.remove('visible');
     var carga = {
       codigo: DATOS.codigo,
+      cedula: CEDULA,
       trabajador: nombreActual(),
       items: Object.keys(elegidas).map(function (o) { return { obra: o, horas: num(elegidas[o]) }; })
     };
@@ -432,13 +454,40 @@
   $('corregir').addEventListener('click', function () { $('confirmar').classList.remove('visible'); });
   $('enviarIgual').addEventListener('click', enviar);
 
+  function identificar() {
+    var ced = $('cedula').value.replace(/\D/g, '');
+    $('cedulaError').textContent = '';
+    if (ced.length < 6) { $('cedulaError').textContent = 'Escribí tu cédula completa.'; return; }
+    $('cedulaContinuar').disabled = true;
+    $('cedulaContinuar').textContent = 'Buscando…';
+    api({ accion: 'datos', cedula: ced }).then(function (datos) {
+      CEDULA = ced;
+      DATOS = datos;
+      iniciar();
+    }).catch(function (err) {
+      $('cedulaError').textContent = err.message;
+    }).then(function () {
+      $('cedulaContinuar').disabled = false;
+      $('cedulaContinuar').textContent = 'Continuar';
+    });
+  }
+
+  $('cedulaContinuar').addEventListener('click', identificar);
+  $('cedula').addEventListener('keydown', function (e) { if (e.key === 'Enter') identificar(); });
+  $('noSoyYo').addEventListener('click', function () {
+    // Vuelve a pedir la cédula, sin dejar datos del anterior en pantalla
+    CEDULA = ''; elegidas = Object.create(null); otras = []; $('extra').value = '';
+    $('cedula').value = ''; $('yaEnviado').hidden = true; $('error').textContent = '';
+    $('nombreFijo').hidden = true; $('noSoyYo').hidden = true;
+    DATOS.pideCedula = true; DATOS.trabajador = null; DATOS.anterior = null;
+    iniciar();
+  });
+
   function cargar() {
     $('cargando').textContent = 'Cargando…';
     api().then(function (datos) {
       DATOS = datos;
       $('cargando').hidden = true;
-      $('formulario').hidden = false;
-      $('barra').hidden = false;
       iniciar();
     }).catch(function (err) {
       $('cargando').innerHTML = '';

@@ -42,7 +42,7 @@ trabajador (hoja **Control**). Los feriados que se anotan en **Configuración** 
 |---|---|
 | Configuración | Fechas de la quincena, link del formulario, texto del mensaje, feriados. |
 | Obras | Lista de obras. Solo aparecen en el formulario las que tienen **Activa** tildada. |
-| Trabajadores | Nombre, celular y **Activo**. La herramienta completa el código, el link personal y el botón **Enviar**. |
+| Trabajadores | Nombre, celular, **Activo** y **Cédula** (columna G). La herramienta completa el código, el link personal y el botón **Enviar**. |
 | Respuestas | Todo lo que mandan los trabajadores (un renglón por obra). Queda el historial de todas las quincenas. |
 | Resumen por obra | Suma de todos los trabajadores por obra, con los conceptos y el total. |
 | Detalle por trabajador | Horas y conceptos de cada trabajador en cada obra. |
@@ -82,7 +82,10 @@ Hace falta una cuenta de Google y hacerlo desde una computadora.
 1. **Horas → Pasar a la quincena siguiente** (o cambiar las fechas en **Configuración**). Anotar
    los feriados de la quincena, si hay.
 2. **Horas → 1. Preparar mensajes de WhatsApp**.
-   - *Al grupo:* copiar el mensaje que aparece y pegarlo en el grupo. Cada uno elige su nombre.
+   - *Al grupo o a una lista de difusión:* copiar el mensaje que aparece y mandarlo una sola vez.
+     Si en **Configuración** está tildado *Pedir cédula (link general)*, cada uno entra con su
+     cédula (cargada en **Trabajadores**, columna G) y nadie puede cargar por otro ni ver horas
+     ajenas. Si no, cada uno elige su nombre de una lista.
    - *A cada uno:* en **Trabajadores**, tocar **Enviar** en cada fila. Con el link personal el
      formulario ya sabe quién es y nadie puede cargar por otro.
 3. Mirar la hoja **Control** para ver quién falta y recordarle.

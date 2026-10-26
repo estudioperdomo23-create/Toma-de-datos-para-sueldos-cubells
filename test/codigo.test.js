@@ -67,6 +67,7 @@ function prepararLibro() {
   cfg.getRange('B2').setValue(ctx.isoAFecha('2026-10-16'));
   cfg.getRange('B3').setValue(ctx.isoAFecha('2026-10-31'));
   cfg.getRange('B4').setValue('https://script.google.com/macros/s/XYZ/exec');
+  cfg.getRange('B6').setValue(false); // estas pruebas usan la lista de nombres; la cédula se prueba aparte
   const obras = hoja('Obras');
   obras.getRange('A2:B5').setValues([['Edificio Pocitos', true], ['Casa Carrasco', true], ['Local Centro', true], ['Obra terminada', false]]);
   const trab = hoja('Trabajadores');
@@ -252,4 +253,52 @@ test('obras "Otra" y horas extra en los resúmenes', () => {
   // Corregir sin horas extra borra el renglón de extra
   ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 96 }] });
   assert.deepStrictEqual(hoja('Control').valores()[3], ['Juan Pérez', 'Sí', 96, 96, 0, 0, 'OK']);
+});
+
+test('identificación por cédula con el link general', () => {
+  const { ctx, hoja, dialogos } = prepararLibro();
+  const cfg = hoja('Configuración');
+  assert.strictEqual(cfg.getRange('A6').getValue(), 'Pedir cédula (link general)');
+  cfg.getRange('B6').setValue(true);
+  assert.strictEqual(hoja('Trabajadores').getRange('G1').getValue(), 'Cédula');
+  hoja('Trabajadores').getRange('G2:G3').setValues([['1.234.567-8'], ['4.567.890-1']]);
+
+  // Sin cédula: no se muestra la lista de nombres
+  const sin = get(ctx, { accion: 'datos' }).resultado;
+  assert.deepStrictEqual([sin.pideCedula, sin.trabajadores, sin.trabajador, sin.version], [true, [], null, 3]);
+
+  // Con cédula (con o sin puntos): viene el nombre fijo
+  const juan = get(ctx, { accion: 'datos', cedula: '12345678' }).resultado;
+  assert.deepStrictEqual([juan.pideCedula, juan.trabajador, juan.codigo], [false, 'Juan Pérez', '']);
+  assert.strictEqual(get(ctx, { accion: 'datos', cedula: '4567890-1' }).resultado.trabajador, 'Ana Gómez');
+
+  // Cédula equivocada
+  assert.deepStrictEqual(get(ctx, { accion: 'datos', cedula: '99999999' }),
+    { ok: false, error: 'No encontramos esa cédula. Revisala o avisale a la oficina.' });
+
+  // Guardar exige cédula (o link personal); el nombre que mande la página no alcanza
+  assert.deepStrictEqual(post(ctx, { accion: 'guardar', carga: { trabajador: 'Juan Pérez', items: [{ obra: 'Local Centro', horas: 8 }] } }),
+    { ok: false, error: 'Ingresá tu cédula.' });
+  const ok = post(ctx, { accion: 'guardar', carga: { cedula: '1.234.567-8', trabajador: 'Ana Gómez', items: [{ obra: 'Local Centro', horas: 8 }] } });
+  assert.strictEqual(ok.resultado.trabajador, 'Juan Pérez'); // manda la cédula, no el nombre
+  // Al volver a entrar con la cédula, viene lo que ya cargó
+  assert.deepStrictEqual(get(ctx, { accion: 'datos', cedula: '12345678' }).resultado.anterior, [{ obra: 'Local Centro', horas: 8 }]);
+  // Nadie puede ver las horas de otro por nombre
+  assert.strictEqual(post(ctx, { accion: 'anterior', trabajador: 'Juan Pérez' }).ok, false);
+
+  // El link personal sigue funcionando sin cédula; el diálogo avisa quién no tiene cédula
+  ctx.prepararMensajes();
+  assert.match(dialogos.at(-1)[1], /sin cédula cargada.*Luis Rodríguez/);
+  assert.doesNotMatch(dialogos.at(-1)[1], /sin cédula cargada.*Juan Pérez/);
+  const codigo = hoja('Trabajadores').getRange('D3').getValue();
+  assert.strictEqual(get(ctx, { accion: 'datos', codigo }).resultado.trabajador, 'Ana Gómez');
+  assert.strictEqual(post(ctx, { accion: 'guardar', carga: { codigo, items: [{ obra: 'Local Centro', horas: 9 }] } }).ok, true);
+});
+
+test('freno a quien prueba muchas cédulas', () => {
+  const { ctx, hoja } = prepararLibro();
+  hoja('Configuración').getRange('B6').setValue(true);
+  hoja('Trabajadores').getRange('G2').setValue('12345678');
+  for (let i = 0; i < 30; i++) assert.strictEqual(get(ctx, { accion: 'datos', cedula: String(10000000 + i) }).ok, false);
+  assert.match(get(ctx, { accion: 'datos', cedula: '12345678' }).error, /Demasiados intentos/);
 });

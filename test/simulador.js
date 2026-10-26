@@ -76,6 +76,7 @@ function crearEntorno(opciones = {}) {
   const dialogos = [];
   const respuestasUi = opciones.respuestasUi || [];
   const props = {};
+  const cache = {};
   const ctx = {
     console,
     SpreadsheetApp: {
@@ -103,6 +104,7 @@ function crearEntorno(opciones = {}) {
     },
     PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Utilities: {
       formatDate: (d, tz, f) => {
         const s = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
