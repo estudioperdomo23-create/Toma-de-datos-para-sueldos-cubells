@@ -27,8 +27,12 @@ arma sola el resumen por obra con los conceptos para sueldos.
 | Transporte | horas |
 | Herramientas | horas |
 | Ticket alimentación | horas ÷ 8 (con decimales) |
-| Descanso pago | horas ÷ 8, redondeado al día más cercano |
-| Viático | horas ÷ 8, redondeado al día más cercano (20% o 60% según la obra) |
+| Descanso pago | días: horas ÷ 8, redondeado al día más cercano |
+| Viático | días: horas ÷ 8, redondeado (20% o 60% según la obra; las obras con *Sin viático* no llevan) |
+
+Descanso pago y viático se calculan por trabajador sobre el total de la quincena y se reparten
+entre sus obras en proporción a las horas. Ninguno de los dos puede superar los **días hábiles**
+de la quincena (lunes a viernes, sin los feriados de Configuración).
 
 **Horas extra:** se muestran aparte (hojas Detalle, Control y al pie del Resumen por obra); no se
 suman a las obras ni a los conceptos.
@@ -104,7 +108,7 @@ presentismo semanal, ropa, transporte y herramientas). La ventana tiene un link 
 cada uno en Excel.
 
 Para que salgan completos:
-- **Obras:** columna C *Centro de costos* y casilla D *Viático 60%*.
+- **Obras:** columna C *Centro de costos*, casilla D *Viático 60%* y casilla E *Sin viático*.
 - **Trabajadores:** columna H *Nº funcionario* y casilla I *Viático siempre 20%* (para quien va al
   20% aunque la obra sea de 60%).
 

@@ -85,6 +85,66 @@ function horasEsperadas(desdeIso, hastaIso, feriadosIso) {
   return total;
 }
 
+/** Días hábiles entre dos fechas (inclusive): lunes a viernes, sin feriados. */
+function diasHabiles(desdeIso, hastaIso, feriadosIso) {
+  var feriados = Object.create(null);
+  (feriadosIso || []).forEach(function (f) { feriados[f] = true; });
+  var total = 0;
+  for (var d = isoAFecha(desdeIso); fechaAIso(d) <= hastaIso; d.setDate(d.getDate() + 1)) {
+    if (HORAS_POR_DIA[d.getDay()] && !feriados[fechaAIso(d)]) total++;
+  }
+  return total;
+}
+
+/**
+ * Reparte días (descanso pago o viático) entre las obras de un trabajador.
+ * El total es horas ÷ 8 redondeado al día más cercano, sin pasar el tope (días hábiles de la
+ * quincena). Se reparte en proporción a las horas de cada obra; los días que sobran del redondeo
+ * van a las obras con mayor resto. horasPorObra: {obra: horas} -> {obra: días}
+ */
+function repartirDias(horasPorObra, tope) {
+  var obras = Object.keys(horasPorObra).filter(function (o) { return horasPorObra[o] > 0; });
+  var suma = obras.reduce(function (s, o) { return s + horasPorObra[o]; }, 0);
+  var dias = Object.create(null);
+  if (!suma) return dias;
+  var total = Math.min(diasTrabajados(suma), tope);
+  var restos = obras.map(function (o) {
+    var cuota = horasPorObra[o] * total / suma;
+    dias[o] = Math.floor(cuota + 1e-9);
+    return { obra: o, resto: cuota - dias[o], horas: horasPorObra[o] };
+  });
+  var faltan = total - obras.reduce(function (s, o) { return s + dias[o]; }, 0);
+  restos.sort(function (a, b) { return (b.resto - a.resto) || (b.horas - a.horas) || compararTexto(a.obra, b.obra); });
+  for (var i = 0; i < faltan; i++) dias[restos[i].obra]++;
+  return dias;
+}
+
+/**
+ * Horas y días por trabajador y obra (sin horas extra).
+ * Devuelve {trabajador: {obra: {horas, descanso, viatico}}}. Las obras con "Sin viático" no
+ * cuentan para el viático.
+ */
+function diasPorTrabajador(respuestas, infoObras, tope) {
+  var horas = Object.create(null);
+  respuestas.forEach(function (r) {
+    if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
+    var t = horas[r.trabajador] = horas[r.trabajador] || Object.create(null);
+    t[r.obra] = (t[r.obra] || 0) + r.horas;
+  });
+  var salida = Object.create(null);
+  Object.keys(horas).forEach(function (n) {
+    var conViatico = Object.create(null);
+    Object.keys(horas[n]).forEach(function (o) { if (!(infoObras[o] || {}).sinViatico) conViatico[o] = horas[n][o]; });
+    var descanso = repartirDias(horas[n], tope);
+    var viatico = repartirDias(conViatico, tope);
+    salida[n] = Object.create(null);
+    Object.keys(horas[n]).forEach(function (o) {
+      salida[n][o] = { horas: redondear(horas[n][o]), descanso: descanso[o] || 0, viatico: viatico[o] || 0 };
+    });
+  });
+  return salida;
+}
+
 /** Conceptos para una cantidad de horas: [ropa, transporte, herramientas, ticket, descanso, viático] */
 function calcularConceptos(horas) {
   return CONCEPTOS.map(function (c) { return redondear(c.calc(horas)); });
@@ -149,7 +209,14 @@ function horasValidas_(valor, obra) {
  * respuestas: [{trabajador, obra, horas}] de esa quincena. Los renglones FILA_EXTRA son las horas
  * extra: no se suman a las obras ni a los conceptos, se muestran aparte.
  */
-function resumir(respuestas, trabajadoresActivos, esperadas) {
+function resumir(respuestas, trabajadoresActivos, esperadas, infoObras, tope) {
+  var dias = diasPorTrabajador(respuestas, infoObras || {}, tope == null ? Infinity : tope);
+  function conceptos(trabajador, obra, h) {
+    var c = calcularConceptos(h), d = dias[trabajador][obra];
+    c[4] = d.descanso; // Descanso pago
+    c[5] = d.viatico;  // Viático
+    return c;
+  }
   var porObra = Object.create(null), porTrabajador = Object.create(null), detalle = Object.create(null);
   var extras = Object.create(null), totalExtra = 0;
   respuestas.forEach(function (r) {
@@ -170,7 +237,8 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
   var conceptosObra = Object.create(null);
   Object.keys(detalle).forEach(function (k) {
     var obra = k.split('\u0000')[1];
-    var c = calcularConceptos(redondear(detalle[k]));
+    var p = k.split('\u0000');
+    var c = conceptos(p[0], obra, redondear(detalle[k]));
     conceptosObra[obra] = (conceptosObra[obra] || c.map(function () { return 0; })).map(function (v, i) { return v + c[i]; });
   });
   var obras = Object.keys(porObra).sort(compararTexto);
@@ -181,7 +249,7 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
 
   var filasDetalle = Object.keys(detalle).map(function (k) {
     var p = k.split('\u0000'), h = redondear(detalle[k]);
-    return [p[0], p[1], h].concat(calcularConceptos(h));
+    return [p[0], p[1], h].concat(conceptos(p[0], p[1], h));
   });
   Object.keys(extras).forEach(function (n) {
     filasDetalle.push([n, FILA_EXTRA, redondear(extras[n]), '', '', '', '', '', '']);
@@ -207,10 +275,12 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
 /**
  * Arma, para cada obra, los renglones del JORNAL del programa de sueldos.
  * respuestas: [{trabajador, obra, horas}] de la quincena (los de FILA_EXTRA no van).
- * infoTrabajadores: {nombre: {numero, siempre20}}; infoObras: {obra: {centro, viatico60}}.
+ * infoTrabajadores: {nombre: {numero, siempre20}}; infoObras: {obra: {centro, viatico60, sinViatico}}.
+ * tope: días hábiles de la quincena (máximo de descanso pago y de viático por trabajador).
  * Devuelve [{obra, centro, filas: [[nº, nombre, C102..C518]], avisos: []}] ordenado por obra.
  */
-function armarJornales(respuestas, infoTrabajadores, infoObras) {
+function armarJornales(respuestas, infoTrabajadores, infoObras, tope) {
+  var dias = diasPorTrabajador(respuestas, infoObras, tope == null ? Infinity : tope);
   var porObra = Object.create(null);
   respuestas.forEach(function (r) {
     if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
@@ -225,14 +295,15 @@ function armarJornales(respuestas, infoTrabajadores, infoObras) {
       var it = infoTrabajadores[nombre] || {};
       if (!it.numero) avisos.push(nombre + ' no tiene Nº de funcionario');
       var h = redondear(porObra[obra][nombre]);
-      var dias = diasTrabajados(h);
+      var d = dias[nombre][obra];
+      var viatico = io.sinViatico ? '' : d.viatico;
       var al60 = !!io.viatico60 && !it.siempre20;
       return [it.numero || '', nombre,
         h,                         // C102 Horas Normales
         '',                        // C106 Jornal Feriado NoTrabaja
-        dias,                      // C108 Descanso Pago
-        al60 ? '' : dias,          // C132 Viático 20%
-        al60 ? dias : '',          // C133 Viático 60%
+        d.descanso,                // C108 Descanso Pago
+        al60 ? '' : viatico,       // C132 Viático 20%
+        al60 ? viatico : '',       // C133 Viático 60%
         redondear(h / HORAS_JORNADA), // C152 Tickets Alimentación
         h,                         // C111 Presentismo Semanal
         h, h, h,                   // C115 Ropa, C114 Transporte, C116 Herramientas
@@ -325,8 +396,9 @@ function instalar() {
   }
   obras.getRange('B2:B200').insertCheckboxes();
   if (!obras.getRange('C1').getValue()) obras.getRange('C1:D1').setValues([['Centro de costos', 'Viático 60%']]).setFontWeight('bold');
+  if (!obras.getRange('E1').getValue()) obras.getRange('E1').setValue('Sin viático').setFontWeight('bold');
   obras.getRange('C2:C200').setNumberFormat('@');
-  obras.getRange('D2:D200').insertCheckboxes();
+  obras.getRange('D2:E200').insertCheckboxes();
   obras.setColumnWidth(1, 260); obras.setColumnWidth(3, 130);
 
   var trab = asegurarHoja(HOJA.TRABAJADORES, ['Nombre', 'Celular', 'Activo', 'Código', 'Link personal', 'Enviar por WhatsApp']);
@@ -374,13 +446,24 @@ function leerConfig() {
     mensaje: String(cfg.getRange(CFG.MENSAJE, 2).getValue()),
     pedirCedula: cfg.getRange(CFG.PEDIR_CEDULA, 2).getValue() === true,
     feriados: feriados,
-    esperadas: horasEsperadas(desde, hasta, feriados)
+    esperadas: horasEsperadas(desde, hasta, feriados),
+    diasHabiles: diasHabiles(desde, hasta, feriados)
   };
 }
 
 function datosDeHoja(nombre) {
   var h = hoja(nombre);
   return h.getLastRow() < 2 ? [] : h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).getValues();
+}
+
+/** Datos de cada obra para los cálculos: {obra: {centro, viatico60, sinViatico}} */
+function infoObras() {
+  var info = Object.create(null);
+  datosDeHoja(HOJA.OBRAS).forEach(function (r) {
+    var obra = String(r[0]).trim();
+    if (obra) info[obra] = { centro: String(r[2] == null ? '' : r[2]).trim(), viatico60: r[3] === true, sinViatico: r[4] === true };
+  });
+  return info;
 }
 
 function obrasActivas() {
@@ -454,7 +537,7 @@ function escaparHtml(s) {
 function actualizarResumen() {
   var cfg = leerConfig();
   var nombres = trabajadores().map(function (t) { return t.nombre; });
-  var r = resumir(respuestasDeQuincena(cfg), nombres, cfg.esperadas);
+  var r = resumir(respuestasDeQuincena(cfg), nombres, cfg.esperadas, infoObras(), cfg.diasHabiles);
   var titulo = 'Quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta);
   var conceptos = CONCEPTOS.map(function (c) { return c.nombre; });
 
@@ -465,7 +548,7 @@ function actualizarResumen() {
     hoja(HOJA.POR_OBRA).getRange(filaExtra, 1, 1, 2).setValues([['Horas extra (aparte, no incluidas arriba)', r.totalExtra]])
       .setFontWeight('bold');
   }
-  escribirTabla(HOJA.CONTROL, titulo + ' — horas normales: ' + cfg.esperadas,
+  escribirTabla(HOJA.CONTROL, titulo + ' — horas normales: ' + cfg.esperadas + ' — días hábiles: ' + cfg.diasHabiles,
     ['Trabajador', 'Respondió', 'Horas en obras', 'Horas de la quincena', 'Diferencia', 'Horas extra', 'Estado'], r.control, false);
 
   var control = hoja(HOJA.CONTROL);
@@ -695,12 +778,7 @@ function generarJornales() {
     var nombre = String(r[0]).trim();
     if (nombre) infoTrabajadores[nombre] = { numero: r[7] === '' || r[7] == null ? '' : r[7], siempre20: r[8] === true };
   });
-  var infoObras = Object.create(null);
-  datosDeHoja(HOJA.OBRAS).forEach(function (r) {
-    var obra = String(r[0]).trim();
-    if (obra) infoObras[obra] = { centro: String(r[2] == null ? '' : r[2]).trim(), viatico60: r[3] === true };
-  });
-  var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras);
+  var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras(), cfg.diasHabiles);
   if (!jornales.length) {
     SpreadsheetApp.getUi().alert('Todavía no hay respuestas para la quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) + '.');
     return;
