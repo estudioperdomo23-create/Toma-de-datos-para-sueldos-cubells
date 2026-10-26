@@ -11,7 +11,9 @@ arma sola el resumen por obra con los conceptos para sueldos.
    genera el mensaje con el link. Se manda por WhatsApp: al grupo, o a cada trabajador con un
    botón **Enviar** que abre WhatsApp con el mensaje ya escrito.
 2. **El trabajador responde.** Toca el link y se abre el formulario. Elige su nombre, marca una o
-   varias obras y pone las horas de cada una. Si el total no coincide con el horario normal de la
+   varias obras y pone las horas de cada una. Si trabajó en una obra que no está en la lista, la
+   agrega con **+ Otra obra** escribiendo el nombre (queda como "Otra: …"). Las **horas extra** de
+   la quincena van en un renglón aparte. Si el total no coincide con el horario normal de la
    quincena, se le avisa antes de enviar. Si se equivocó, puede volver a entrar y corregir: la
    respuesta nueva reemplaza a la anterior.
 3. **Descargar el resumen.** En la hoja **Control** se ve quién falta responder. Cuando están
@@ -27,6 +29,9 @@ arma sola el resumen por obra con los conceptos para sueldos.
 | Ticket alimentación | horas ÷ 8 |
 | Descanso pago | horas ÷ 8 |
 | Viático | horas ÷ 8 |
+
+**Horas extra:** se muestran aparte (hojas Detalle, Control y al pie del Resumen por obra); no se
+suman a las obras ni a los conceptos.
 
 **Horario normal:** lunes a jueves 9 h, viernes 8 h. Se usa para controlar el total de cada
 trabajador (hoja **Control**). Los feriados que se anotan en **Configuración** no se cuentan.

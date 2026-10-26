@@ -30,7 +30,18 @@ test('quincenas', () => {
 test('validación de lo que manda el formulario', () => {
   const t = ['Ana'], o = ['Obra A', 'Obra B'];
   assert.deepStrictEqual(JSON.parse(JSON.stringify(G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: '40,5' }, { obra: 'Obra B', horas: 4 }] }, t, o))),
-    [{ obra: 'Obra A', horas: 40.5 }, { obra: 'Obra B', horas: 4 }]);
+    { items: [{ obra: 'Obra A', horas: 40.5 }, { obra: 'Obra B', horas: 4 }], extra: 0 });
+  // Obras "Otra" escritas a mano y horas extra
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: 8 }],
+    otras: [{ nombre: '  Casa   de Pedro ', horas: '4,5' }], extra: '6' }, t, o))),
+    { items: [{ obra: 'Obra A', horas: 8 }, { obra: 'Otra: Casa de Pedro', horas: 4.5 }], extra: 6 });
+  // Solo una "Otra" alcanza
+  assert.strictEqual(G.validarCarga({ trabajador: 'Ana', otras: [{ nombre: 'Galpón', horas: 9 }] }, t, o).items[0].obra, 'Otra: Galpón');
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', otras: [{ nombre: ' ', horas: 9 }] }, t, o), /nombre de la obra/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', otras: [{ nombre: 'Galpón', horas: 0 }] }, t, o), /Revisá las horas de "Galpón"/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', otras: [{ nombre: 'Galpón', horas: 1 }, { nombre: 'galpón', horas: 2 }] }, t, o), /repetida/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra A', horas: 1 }], extra: -2 }, t, o), /horas extra/);
+  assert.throws(() => G.validarCarga({ trabajador: 'Ana', extra: 5 }, t, o), /al menos una obra/);
   assert.throws(() => G.validarCarga({ trabajador: 'Pedro', items: [{ obra: 'Obra A', horas: 1 }] }, t, o), /nombre/);
   assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [] }, t, o), /al menos una obra/);
   assert.throws(() => G.validarCarga({ trabajador: 'Ana', items: [{ obra: 'Obra Z', horas: 1 }] }, t, o), /no está en la lista/);
@@ -170,9 +181,9 @@ test('respuestas, reemplazo y resumen por obra con conceptos', () => {
   ]);
 
   assert.deepStrictEqual(hoja('Control').valores().slice(2), [
-    ['Ana Gómez', 'Sí', 90.5, 96, -5.5, 'Cargó horas de menos'],
-    ['Juan Pérez', 'Sí', 96, 96, 0, 'OK'],
-    ['Luis Rodríguez', 'No', '', 96, '', 'Falta responder']
+    ['Ana Gómez', 'Sí', 90.5, 96, -5.5, 0, 'Cargó horas de menos'],
+    ['Juan Pérez', 'Sí', 96, 96, 0, 0, 'OK'],
+    ['Luis Rodríguez', 'No', '', 96, '', '', 'Falta responder']
   ]);
 
   // La respuesta anterior se ofrece para corregir
@@ -199,4 +210,46 @@ test('feriados de la hoja Configuración descuentan horas', () => {
   const { ctx, hoja } = prepararLibro();
   hoja('Configuración').getRange('D2').setValue(ctx.isoAFecha('2026-10-19'));
   assert.strictEqual(ctx.leerConfig().esperadas, 87); // 96 - lunes 19/10
+});
+
+test('obras "Otra" y horas extra en los resúmenes', () => {
+  const { ctx, hoja } = prepararLibro();
+  const res = ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 80 }],
+    otras: [{ nombre: 'Casa de Pedro', horas: 16 }], extra: 10 });
+  assert.deepStrictEqual([res.total, res.extra], [96, 10]);
+  ctx.guardarRespuesta({ trabajador: 'Ana Gómez', otras: [{ nombre: 'Casa de Pedro', horas: 8 }], extra: '2,5' });
+
+  assert.deepStrictEqual(hoja('Respuestas').valores().slice(1).map(r => [r[3], r[4], r[5]]), [
+    ['Juan Pérez', 'Edificio Pocitos', 80], ['Juan Pérez', 'Otra: Casa de Pedro', 16], ['Juan Pérez', 'Horas extra', 10],
+    ['Ana Gómez', 'Otra: Casa de Pedro', 8], ['Ana Gómez', 'Horas extra', 2.5]
+  ]);
+
+  // Las horas extra no se suman a las obras ni a los conceptos
+  const porObra = hoja('Resumen por obra').valores();
+  assert.deepStrictEqual(porObra.slice(2, 4), [
+    ['Edificio Pocitos', 80, 80, 80, 80, 10, 10, 10, 1],
+    ['Otra: Casa de Pedro', 24, 24, 24, 24, 3, 3, 3, 2]
+  ]);
+  assert.strictEqual(porObra[4][0], 'TOTAL');
+  assert.deepStrictEqual(porObra[6].slice(0, 2), ['Horas extra (aparte, no incluidas arriba)', 12.5]);
+
+  assert.deepStrictEqual(hoja('Detalle por trabajador').valores().slice(2).map(r => r.slice(0, 4)), [
+    ['Ana Gómez', 'Otra: Casa de Pedro', 8, 8],
+    ['Ana Gómez', 'Horas extra', 2.5, ''],
+    ['Juan Pérez', 'Edificio Pocitos', 80, 80],
+    ['Juan Pérez', 'Otra: Casa de Pedro', 16, 16],
+    ['Juan Pérez', 'Horas extra', 10, '']
+  ]);
+  assert.deepStrictEqual(hoja('Control').valores().slice(2, 4), [
+    ['Ana Gómez', 'Sí', 8, 96, -88, 2.5, 'Cargó horas de menos'],
+    ['Juan Pérez', 'Sí', 96, 96, 0, 10, 'OK']
+  ]);
+
+  // La respuesta anterior incluye las "Otra" y las horas extra, para corregir
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.obtenerRespuestaAnterior('Juan Pérez'))), [
+    { obra: 'Edificio Pocitos', horas: 80 }, { obra: 'Otra: Casa de Pedro', horas: 16 }, { obra: 'Horas extra', horas: 10 }
+  ]);
+  // Corregir sin horas extra borra el renglón de extra
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 96 }] });
+  assert.deepStrictEqual(hoja('Control').valores()[3], ['Juan Pérez', 'Sí', 96, 96, 0, 0, 'OK']);
 });

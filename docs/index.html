@@ -34,6 +34,13 @@
   .horas input { width: 96px; font: inherit; font-size: 18px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); }
   .horas button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 20px; }
   .vacio { color: var(--muted); padding: 10px 2px; }
+  .otra { padding: 12px; }
+  .otra .fila { display: flex; gap: 8px; align-items: center; }
+  .otra input.nombreObra { flex: 1; min-width: 0; font: inherit; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); }
+  .otra .horas { display: flex; padding: 10px 0 0; }
+  .quitar { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; padding: 6px; }
+  button.agregar { width: 100%; margin-top: 8px; padding: 12px; font: inherit; border: 1px dashed var(--border); border-radius: 10px; background: none; color: var(--accent); font-weight: 600; }
+  #extraPanel .horas { display: flex; align-items: center; gap: 10px; padding: 0; }
   .barra { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
   .barra .dentro { max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
   .total { flex: 1; font-size: 14px; }
@@ -80,6 +87,19 @@
       <input type="search" id="buscar" placeholder="Buscar obra…" hidden>
       <p class="ayuda">Marcá todas las obras en las que estuviste y poné las horas de cada una.</p>
       <div id="obras"></div>
+      <div id="otras"></div>
+      <button type="button" class="agregar" id="agregarOtra" hidden>+ Otra obra (escribir el nombre)</button>
+    </section>
+
+    <section class="panel" id="extraPanel" hidden>
+      <label class="titulo" for="extra">Horas extra de la quincena</label>
+      <div class="horas">
+        <button type="button" id="extraMenos" aria-label="Restar una hora extra">−</button>
+        <input type="text" inputmode="decimal" id="extra" placeholder="0">
+        <button type="button" id="extraMas" aria-label="Sumar una hora extra">+</button>
+        <span>horas</span>
+      </div>
+      <p class="ayuda">Aparte de las horas de las obras. Si no hiciste, dejalo vacío.</p>
     </section>
     <p class="error" id="error" role="alert"></p>
   </div>
@@ -167,6 +187,8 @@
   }
 
   var elegidas = Object.create(null); // obra -> horas (texto)
+  var otras = [];                      // [{nombre, horas}] obras escritas a mano
+  var PREFIJO_OTRA = 'Otra: ', FILA_EXTRA = 'Horas extra';
   var $ = function (id) { return document.getElementById(id); };
 
   function num(v) { var n = Number(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
@@ -188,16 +210,63 @@
       });
     }
     $('buscar').hidden = DATOS.obras.length < 8;
+    // "Otra" y horas extra solo si la planilla ya tiene el código que los guarda
+    $('agregarOtra').hidden = $('extraPanel').hidden = !(DATOS.version >= 2);
     dibujarObras();
     actualizarTotal();
   }
 
   function cargarAnterior(items) {
     elegidas = Object.create(null);
-    (items || []).forEach(function (it) { if (DATOS.obras.indexOf(it.obra) >= 0) elegidas[it.obra] = String(it.horas).replace('.', ','); });
+    otras = [];
+    $('extra').value = '';
+    (items || []).forEach(function (it) {
+      var h = String(it.horas).replace('.', ',');
+      if (it.obra === FILA_EXTRA) $('extra').value = h;
+      else if (it.obra.indexOf(PREFIJO_OTRA) === 0) otras.push({ nombre: it.obra.slice(PREFIJO_OTRA.length), horas: h });
+      else if (DATOS.obras.indexOf(it.obra) >= 0) elegidas[it.obra] = h;
+    });
     $('yaEnviado').hidden = !items;
     dibujarObras();
+    dibujarOtras();
     actualizarTotal();
+  }
+
+  function controlHoras(valor, etiqueta, alCambiar) {
+    var horas = document.createElement('div');
+    horas.className = 'horas';
+    var menos = document.createElement('button'); menos.type = 'button'; menos.textContent = '−'; menos.setAttribute('aria-label', 'Restar una hora');
+    var inp = document.createElement('input');
+    inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = 'Horas'; inp.value = valor || '';
+    inp.setAttribute('aria-label', etiqueta);
+    var mas = document.createElement('button'); mas.type = 'button'; mas.textContent = '+'; mas.setAttribute('aria-label', 'Sumar una hora');
+    var txt = document.createElement('span'); txt.textContent = 'horas';
+    horas.appendChild(menos); horas.appendChild(inp); horas.appendChild(mas); horas.appendChild(txt);
+    inp.addEventListener('input', function () { alCambiar(inp.value); });
+    function sumar(d) { var v = Math.max(0, num(inp.value) + d); inp.value = v ? fmt(v) : ''; alCambiar(inp.value); }
+    menos.addEventListener('click', function () { sumar(-1); });
+    mas.addEventListener('click', function () { sumar(1); });
+    return { el: horas, input: inp };
+  }
+
+  function dibujarOtras() {
+    var cont = $('otras');
+    cont.innerHTML = '';
+    otras.forEach(function (o, i) {
+      var div = document.createElement('div');
+      div.className = 'obra elegida otra';
+      var fila = document.createElement('div'); fila.className = 'fila';
+      var nombre = document.createElement('input');
+      nombre.className = 'nombreObra'; nombre.placeholder = 'Nombre de la obra'; nombre.maxLength = 60; nombre.value = o.nombre;
+      nombre.setAttribute('aria-label', 'Nombre de la otra obra ' + (i + 1));
+      nombre.addEventListener('input', function () { o.nombre = nombre.value; });
+      var quitar = document.createElement('button'); quitar.type = 'button'; quitar.className = 'quitar'; quitar.textContent = 'Quitar';
+      quitar.addEventListener('click', function () { otras.splice(i, 1); dibujarOtras(); actualizarTotal(); });
+      fila.appendChild(nombre); fila.appendChild(quitar);
+      var h = controlHoras(o.horas, 'Horas en la otra obra ' + (i + 1), function (v) { o.horas = v; actualizarTotal(); });
+      div.appendChild(fila); div.appendChild(h.el);
+      cont.appendChild(div);
+    });
   }
 
   function dibujarObras() {
@@ -218,25 +287,14 @@
       var span = document.createElement('span'); span.textContent = obra;
       lab.appendChild(cb); lab.appendChild(span);
 
-      var horas = document.createElement('div');
-      horas.className = 'horas';
-      var menos = document.createElement('button'); menos.type = 'button'; menos.textContent = '−'; menos.setAttribute('aria-label', 'Restar una hora');
-      var inp = document.createElement('input');
-      inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = 'Horas'; inp.value = elegidas[obra] || '';
-      inp.setAttribute('aria-label', 'Horas en ' + obra);
-      var mas = document.createElement('button'); mas.type = 'button'; mas.textContent = '+'; mas.setAttribute('aria-label', 'Sumar una hora');
-      var txt = document.createElement('span'); txt.textContent = 'horas';
-      horas.appendChild(menos); horas.appendChild(inp); horas.appendChild(mas); horas.appendChild(txt);
+      var h = controlHoras(elegidas[obra], 'Horas en ' + obra, function (v) { elegidas[obra] = v; actualizarTotal(); });
+      var horas = h.el, inp = h.input;
 
       cb.addEventListener('change', function () {
         if (cb.checked) { elegidas[obra] = ''; div.classList.add('elegida'); inp.focus(); }
         else { delete elegidas[obra]; div.classList.remove('elegida'); }
         actualizarTotal();
       });
-      inp.addEventListener('input', function () { elegidas[obra] = inp.value; actualizarTotal(); });
-      function sumar(d) { var v = Math.max(0, num(inp.value) + d); inp.value = v ? fmt(v) : ''; elegidas[obra] = inp.value; actualizarTotal(); }
-      menos.addEventListener('click', function () { sumar(-1); });
-      mas.addEventListener('click', function () { sumar(1); });
 
       div.appendChild(lab); div.appendChild(horas);
       cont.appendChild(div);
@@ -244,16 +302,20 @@
   }
 
   function total() {
-    return Object.keys(elegidas).reduce(function (s, o) { return s + num(elegidas[o]); }, 0);
+    return Object.keys(elegidas).reduce(function (s, o) { return s + num(elegidas[o]); }, 0) +
+      otras.reduce(function (s, o) { return s + num(o.horas); }, 0);
   }
+
+  function cantidadObras() { return Object.keys(elegidas).length + otras.length; }
 
   function actualizarTotal() {
     var t = total();
-    var obras = Object.keys(elegidas).length;
+    var obras = cantidadObras();
+    var extra = num($('extra').value);
     var el = $('total');
     el.className = 'total' + (obras ? (Math.abs(t - DATOS.esperadas) < 0.01 ? ' ok' : ' dif') : '');
     el.innerHTML = obras
-      ? 'Cargaste <b>' + fmt(t) + '</b> de ' + DATOS.esperadas + ' h'
+      ? 'Cargaste <b>' + fmt(t) + '</b> de ' + DATOS.esperadas + ' h' + (extra > 0 ? ' · ' + fmt(extra) + ' extra' : '')
       : 'Elegí tus obras';
     $('enviar').disabled = !nombreActual() || !obras;
   }
@@ -261,12 +323,24 @@
   function problemas() {
     if (!nombreActual()) return 'Elegí tu nombre.';
     var obras = Object.keys(elegidas);
-    if (!obras.length) return 'Elegí al menos una obra.';
+    if (!obras.length && !otras.length) return 'Elegí al menos una obra.';
     for (var i = 0; i < obras.length; i++) {
       var h = num(elegidas[obras[i]]);
       if (!(h > 0)) return 'Poné las horas de "' + obras[i] + '" (o desmarcala).';
       if (h > 200) return 'Revisá las horas de "' + obras[i] + '".';
     }
+    var nombres = Object.create(null);
+    for (var j = 0; j < otras.length; j++) {
+      var n = otras[j].nombre.replace(/\s+/g, ' ').trim();
+      if (!n) return 'Escribí el nombre de la otra obra (o tocá Quitar).';
+      if (nombres[n.toLowerCase()]) return 'La obra "' + n + '" está repetida.';
+      nombres[n.toLowerCase()] = true;
+      var ho = num(otras[j].horas);
+      if (!(ho > 0)) return 'Poné las horas de "' + n + '".';
+      if (ho > 200) return 'Revisá las horas de "' + n + '".';
+    }
+    var ex = $('extra').value.trim();
+    if (ex && (isNaN(Number(ex.replace(',', '.'))) || num(ex) < 0 || num(ex) > 200)) return 'Revisá las horas extra.';
     return '';
   }
 
@@ -277,7 +351,8 @@
     var t = total();
     if (Math.abs(t - DATOS.esperadas) >= 0.01) {
       $('confirmarTexto').innerHTML = 'Cargaste <b>' + fmt(t) + ' horas</b>, pero la quincena tiene <b>' +
-        DATOS.esperadas + ' horas</b> normales.<br><br>Si faltaste, trabajaste horas extra o hubo feriados, enviá igual.';
+        DATOS.esperadas + ' horas</b> normales.<br><br>Si faltaste o hubo feriados, enviá igual.' +
+        (DATOS.version >= 2 ? ' Las horas extra van aparte, en su renglón.' : '');
       $('confirmar').classList.add('visible');
       return;
     }
@@ -291,6 +366,10 @@
       trabajador: nombreActual(),
       items: Object.keys(elegidas).map(function (o) { return { obra: o, horas: num(elegidas[o]) }; })
     };
+    if (DATOS.version >= 2) {
+      carga.otras = otras.map(function (o) { return { nombre: o.nombre.replace(/\s+/g, ' ').trim(), horas: num(o.horas) }; });
+      carga.extra = num($('extra').value);
+    }
     $('enviar').disabled = true;
     $('enviar').textContent = 'Enviando…';
     api({ accion: 'guardar', carga: carga })
@@ -314,7 +393,8 @@
     }).join('');
     $('listo').innerHTML = '<div class="check">✓</div><h2>¡Gracias, ' + escapar(res.trabajador.split(' ')[0]) + '!</h2>' +
       '<p>Tus horas quedaron registradas.</p><table>' + filas +
-      '<tr><td><b>Total</b></td><td><b>' + fmt(res.total) + ' h</b></td></tr></table>' +
+      '<tr><td><b>Total</b></td><td><b>' + fmt(res.total) + ' h</b></td></tr>' +
+      (res.extra ? '<tr><td>Horas extra</td><td>' + fmt(res.extra) + ' h</td></tr>' : '') + '</table>' +
       '<button id="otraVez">Corregir mis horas</button>';
     $('listo').hidden = false;
     $('otraVez').addEventListener('click', function () {
@@ -337,6 +417,17 @@
     }).catch(function () {});
   });
   $('buscar').addEventListener('input', dibujarObras);
+  $('agregarOtra').addEventListener('click', function () {
+    otras.push({ nombre: '', horas: '' });
+    dibujarOtras();
+    actualizarTotal();
+    var campos = $('otras').querySelectorAll('.nombreObra');
+    campos[campos.length - 1].focus();
+  });
+  $('extra').addEventListener('input', actualizarTotal);
+  function sumarExtra(d) { var v = Math.max(0, num($('extra').value) + d); $('extra').value = v ? fmt(v) : ''; actualizarTotal(); }
+  $('extraMenos').addEventListener('click', function () { sumarExtra(-1); });
+  $('extraMas').addEventListener('click', function () { sumarExtra(1); });
   $('enviar').addEventListener('click', intentarEnviar);
   $('corregir').addEventListener('click', function () { $('confirmar').classList.remove('visible'); });
   $('enviarIgual').addEventListener('click', enviar);

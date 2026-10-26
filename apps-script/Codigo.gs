@@ -35,6 +35,11 @@ var CONCEPTOS = [
   { nombre: 'Viático', calc: function (h) { return h / HORAS_JORNADA; } }
 ];
 
+// Obras que el trabajador escribe a mano ("Otra") se guardan con este prefijo
+var PREFIJO_OTRA = 'Otra: ';
+// Renglón de Respuestas con las horas extra de la quincena (no es una obra)
+var FILA_EXTRA = 'Horas extra';
+
 var MENSAJE_PREDETERMINADO =
   'Hola {nombre}, por favor cargá tus horas de la quincena del {desde} al {hasta} en este link: {link}';
 
@@ -96,26 +101,49 @@ function quincenaDe(iso) {
  */
 function validarCarga(carga, trabajadoresActivos, obrasActivas) {
   if (!carga || trabajadoresActivos.indexOf(carga.trabajador) < 0) throw new Error('Elegí tu nombre de la lista.');
-  var items = (carga.items || []).filter(function (it) { return it && it.obra; });
+  var items = [];
+  (carga.items || []).filter(function (it) { return it && it.obra; }).forEach(function (it) {
+    if (obrasActivas.indexOf(it.obra) < 0) throw new Error('La obra "' + it.obra + '" no está en la lista.');
+    items.push({ obra: it.obra, horas: horasValidas_(it.horas, it.obra) });
+  });
+  (carga.otras || []).forEach(function (o) {
+    var nombre = String((o && o.nombre) || '').replace(/\s+/g, ' ').trim();
+    if (!nombre) throw new Error('Escribí el nombre de la obra en "Otra".');
+    if (nombre.length > 60) throw new Error('El nombre "' + nombre.slice(0, 25) + '…" es muy largo.');
+    items.push({ obra: PREFIJO_OTRA + nombre, horas: horasValidas_(o.horas, nombre) });
+  });
   if (!items.length) throw new Error('Elegí al menos una obra.');
   var vistas = Object.create(null);
-  return items.map(function (it) {
-    if (obrasActivas.indexOf(it.obra) < 0) throw new Error('La obra "' + it.obra + '" no está en la lista.');
-    if (vistas[it.obra]) throw new Error('La obra "' + it.obra + '" está repetida.');
-    vistas[it.obra] = true;
-    var horas = Number(String(it.horas).replace(',', '.'));
-    if (!(horas > 0) || horas > 200) throw new Error('Revisá las horas de "' + it.obra + '".');
-    return { obra: it.obra, horas: redondear(horas) };
+  items.forEach(function (it) {
+    var k = it.obra.toLowerCase();
+    if (vistas[k]) throw new Error('La obra "' + it.obra.replace(PREFIJO_OTRA, '') + '" está repetida.');
+    vistas[k] = true;
   });
+  var extra = carga.extra == null || carga.extra === '' ? 0 : Number(String(carga.extra).replace(',', '.'));
+  if (!(extra >= 0) || extra > 200) throw new Error('Revisá las horas extra.');
+  return { items: items, extra: redondear(extra) };
+}
+
+function horasValidas_(valor, obra) {
+  var horas = Number(String(valor).replace(',', '.'));
+  if (!(horas > 0) || horas > 200) throw new Error('Revisá las horas de "' + obra + '".');
+  return redondear(horas);
 }
 
 /**
  * Arma los resúmenes de una quincena.
- * respuestas: [{trabajador, obra, horas}] de esa quincena.
+ * respuestas: [{trabajador, obra, horas}] de esa quincena. Los renglones FILA_EXTRA son las horas
+ * extra: no se suman a las obras ni a los conceptos, se muestran aparte.
  */
 function resumir(respuestas, trabajadoresActivos, esperadas) {
   var porObra = Object.create(null), porTrabajador = Object.create(null), detalle = Object.create(null);
+  var extras = Object.create(null), totalExtra = 0;
   respuestas.forEach(function (r) {
+    if (r.obra === FILA_EXTRA) {
+      extras[r.trabajador] = (extras[r.trabajador] || 0) + r.horas;
+      totalExtra += r.horas;
+      return;
+    }
     var o = porObra[r.obra] = porObra[r.obra] || { horas: 0, trabajadores: Object.create(null) };
     o.horas += r.horas;
     o.trabajadores[r.trabajador] = true;
@@ -133,19 +161,26 @@ function resumir(respuestas, trabajadoresActivos, esperadas) {
   var filasDetalle = Object.keys(detalle).map(function (k) {
     var p = k.split('\u0000'), h = redondear(detalle[k]);
     return [p[0], p[1], h].concat(calcularConceptos(h));
-  }).sort(function (a, b) { return compararTexto(a[0], b[0]) || compararTexto(a[1], b[1]); });
+  });
+  Object.keys(extras).forEach(function (n) {
+    filasDetalle.push([n, FILA_EXTRA, redondear(extras[n]), '', '', '', '', '', '']);
+  });
+  filasDetalle.sort(function (a, b) {
+    return compararTexto(a[0], b[0]) || ((a[1] === FILA_EXTRA) - (b[1] === FILA_EXTRA)) || compararTexto(a[1], b[1]);
+  });
 
   var nombres = trabajadoresActivos.slice();
   Object.keys(porTrabajador).forEach(function (n) { if (nombres.indexOf(n) < 0) nombres.push(n); });
   var filasControl = nombres.sort(compararTexto).map(function (n) {
     var cargadas = porTrabajador[n];
-    if (cargadas === undefined) return [n, 'No', '', esperadas, '', 'Falta responder'];
+    if (cargadas === undefined) return [n, 'No', '', esperadas, '', '', 'Falta responder'];
     cargadas = redondear(cargadas);
     var dif = redondear(cargadas - esperadas);
-    return [n, 'Sí', cargadas, esperadas, dif, dif === 0 ? 'OK' : (dif > 0 ? 'Cargó horas de más' : 'Cargó horas de menos')];
+    var extra = extras[n] ? redondear(extras[n]) : 0;
+    return [n, 'Sí', cargadas, esperadas, dif, extra, dif === 0 ? 'OK' : (dif > 0 ? 'Cargó horas de más' : 'Cargó horas de menos')];
   });
 
-  return { porObra: filasObra, detalle: filasDetalle, control: filasControl };
+  return { porObra: filasObra, detalle: filasDetalle, control: filasControl, totalExtra: redondear(totalExtra) };
 }
 
 function compararTexto(a, b) { return String(a).localeCompare(String(b), 'es'); }
@@ -337,16 +372,21 @@ function actualizarResumen() {
 
   escribirTabla(HOJA.POR_OBRA, titulo, ['Obra', 'Horas'].concat(conceptos).concat(['Trabajadores']), r.porObra, true);
   escribirTabla(HOJA.DETALLE, titulo, ['Trabajador', 'Obra', 'Horas'].concat(conceptos), r.detalle, false);
+  if (r.porObra.length && r.totalExtra) {
+    var filaExtra = r.porObra.length + 5; // títulos, obras, TOTAL y un renglón en blanco
+    hoja(HOJA.POR_OBRA).getRange(filaExtra, 1, 1, 2).setValues([['Horas extra (aparte, no incluidas arriba)', r.totalExtra]])
+      .setFontWeight('bold');
+  }
   escribirTabla(HOJA.CONTROL, titulo + ' — horas normales: ' + cfg.esperadas,
-    ['Trabajador', 'Respondió', 'Horas cargadas', 'Horas de la quincena', 'Diferencia', 'Estado'], r.control, false);
+    ['Trabajador', 'Respondió', 'Horas en obras', 'Horas de la quincena', 'Diferencia', 'Horas extra', 'Estado'], r.control, false);
 
   var control = hoja(HOJA.CONTROL);
   if (r.control.length) {
     var colores = r.control.map(function (f) {
-      var c = f[5] === 'OK' ? '#e5f6ec' : f[5] === 'Falta responder' ? '#fde2e1' : '#fff4d6';
-      return [c, c, c, c, c, c];
+      var c = f[6] === 'OK' ? '#e5f6ec' : f[6] === 'Falta responder' ? '#fde2e1' : '#fff4d6';
+      return [c, c, c, c, c, c, c];
     });
-    control.getRange(3, 1, r.control.length, 6).setBackgrounds(colores);
+    control.getRange(3, 1, r.control.length, 7).setBackgrounds(colores);
   }
   return r;
 }
@@ -468,6 +508,7 @@ function datosFormulario(codigo) {
   var elegido = null;
   if (codigo) lista.forEach(function (t) { if (t.codigo && t.codigo === codigo) elegido = t.nombre; });
   return {
+    version: 2, // 2: admite obras "Otra" y horas extra
     desde: isoATexto(cfg.desde),
     hasta: isoATexto(cfg.hasta),
     esperadas: cfg.esperadas,
@@ -503,7 +544,8 @@ function guardarRespuesta(carga) {
       if (!porCodigo) throw new Error('El link no es válido. Pedí uno nuevo.');
       carga.trabajador = porCodigo.nombre;
     }
-    var items = validarCarga(carga, lista.map(function (t) { return t.nombre; }), obrasActivas());
+    var carga2 = validarCarga(carga, lista.map(function (t) { return t.nombre; }), obrasActivas());
+    var items = carga2.items;
 
     var h = hoja(HOJA.RESPUESTAS);
     var datos = datosDeHoja(HOJA.RESPUESTAS);
@@ -513,7 +555,7 @@ function guardarRespuesta(carga) {
       }
     }
     var ahora = new Date();
-    var filas = items.map(function (it) {
+    var filas = items.concat(carga2.extra ? [{ obra: FILA_EXTRA, horas: carga2.extra }] : []).map(function (it) {
       return [ahora, isoAFecha(cfg.desde), isoAFecha(cfg.hasta), carga.trabajador, it.obra, it.horas];
     });
     h.getRange(h.getLastRow() + 1, 1, filas.length, 6).setValues(filas);
@@ -522,7 +564,7 @@ function guardarRespuesta(carga) {
 
     actualizarResumen();
     var total = redondear(items.reduce(function (s, it) { return s + it.horas; }, 0));
-    return { trabajador: carga.trabajador, total: total, esperadas: cfg.esperadas, items: items };
+    return { trabajador: carga.trabajador, total: total, extra: carga2.extra, esperadas: cfg.esperadas, items: items };
   } finally {
     lock.releaseLock();
   }
