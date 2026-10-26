@@ -99,17 +99,20 @@ function diasHabiles(desdeIso, hastaIso, feriadosIso) {
 }
 
 /**
- * Reparte días (descanso pago o viático) entre las obras de un trabajador.
- * El total es horas ÷ 8 redondeado al día más cercano, sin pasar el tope (días hábiles de la
- * quincena). Se reparte en proporción a las horas de cada obra; los días que sobran del redondeo
- * van a las obras con mayor resto. horasPorObra: {obra: horas} -> {obra: días}
+ * Días (descanso pago o viático) de un trabajador en cada obra: horas de la obra ÷ 8 redondeado
+ * al día más cercano, así misma cantidad de horas da siempre los mismos días. Si la suma pasa el
+ * tope (días hábiles de la quincena), el tope se reparte en proporción a las horas de cada obra y
+ * los días que sobran del redondeo van a las obras con mayor resto.
+ * horasPorObra: {obra: horas} -> {obra: días}
  */
 function repartirDias(horasPorObra, tope) {
   var obras = Object.keys(horasPorObra).filter(function (o) { return horasPorObra[o] > 0; });
-  var suma = obras.reduce(function (s, o) { return s + horasPorObra[o]; }, 0);
   var dias = Object.create(null);
-  if (!suma) return dias;
-  var total = Math.min(diasTrabajados(suma), tope);
+  obras.forEach(function (o) { dias[o] = diasTrabajados(horasPorObra[o]); });
+  if (obras.reduce(function (s, o) { return s + dias[o]; }, 0) <= tope) return dias;
+
+  var suma = obras.reduce(function (s, o) { return s + horasPorObra[o]; }, 0);
+  var total = tope;
   var restos = obras.map(function (o) {
     var cuota = horasPorObra[o] * total / suma;
     dias[o] = Math.floor(cuota + 1e-9);

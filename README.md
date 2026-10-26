@@ -30,9 +30,10 @@ arma sola el resumen por obra con los conceptos para sueldos.
 | Descanso pago | días: horas ÷ 8, redondeado al día más cercano |
 | Viático | días: horas ÷ 8, redondeado (20% o 60% según la obra; las obras con *Sin viático* no llevan) |
 
-Descanso pago y viático se calculan por trabajador sobre el total de la quincena y se reparten
-entre sus obras en proporción a las horas. Ninguno de los dos puede superar los **días hábiles**
-de la quincena (lunes a viernes, sin los feriados de Configuración).
+Descanso pago y viático se calculan en cada obra (horas de la obra ÷ 8, redondeado), así misma
+cantidad de horas da los mismos días. Para cada trabajador, ninguno de los dos puede superar los
+**días hábiles** de la quincena (lunes a viernes, sin los feriados de Configuración); si se pasa,
+el tope se reparte entre sus obras en proporción a las horas.
 
 **Horas extra:** se muestran aparte (hojas Detalle, Control y al pie del Resumen por obra); no se
 suman a las obras ni a los conceptos.

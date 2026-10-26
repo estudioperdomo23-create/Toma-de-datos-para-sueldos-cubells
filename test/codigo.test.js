@@ -323,8 +323,8 @@ test('JORNAL por obra: formato del programa de sueldos', () => {
   // Igual al renglón del ejemplo que mandó la oficina
   assert.deepStrictEqual(j[2].filas.find(f => f[0] === 101), [101, 'Pérez Rodríguez, Juan Carlos', 18, '', 2, 2, '', 2.25, 18, 18, 18, 18, '', '', '', '', '']);
   assert.deepStrictEqual(j[2].filas.find(f => f[0] === 40), [40, 'Ana', 76, '', 10, 10, '', 9.5, 76, 76, 76, 76, '', '', '', '', '']);
-  // Selenza va al 60%, salvo quien tiene "Viático siempre 20%". Ana: 20 + 76 = 96 h -> 12 días, 2 y 10
-  assert.deepStrictEqual(j[1].filas.map(f => [f[1], f[5], f[6]]), [['Ana', '', 2], ['Pedro Siempre Veinte', 6, '']]);
+  // Selenza va al 60%, salvo quien tiene "Viático siempre 20%". Ana: 20 h en Selenza -> 3 días (2,5 redondea arriba)
+  assert.deepStrictEqual(j[1].filas.map(f => [f[1], f[5], f[6]]), [['Ana', '', 3], ['Pedro Siempre Veinte', 6, '']]);
   // Avisos: obra sin centro y trabajador sin número; las horas extra no entran
   assert.deepStrictEqual(j[0].avisos, ['la obra no tiene centro de costos', 'Pepe no tiene Nº de funcionario']);
   assert.ok(!j.some(x => x.obra === 'Horas extra'));
@@ -357,7 +357,10 @@ test('reparto de días entre obras con tope', () => {
   assert.deepStrictEqual(r({ A: 18 }, 11), { A: 2 });                 // el ejemplo: 18 h -> 2 días
   assert.deepStrictEqual(r({ A: 20 }, 11), { A: 3 });                 // 2,5 -> 3
   assert.deepStrictEqual(r({ A: 120 }, 11), { A: 11 });               // 15 días -> tope 11
-  assert.deepStrictEqual(r({ A: 4, B: 4, C: 4 }, 11), { A: 1, B: 1, C: 0 }); // 12 h -> 2 días en total, no 3
+  assert.deepStrictEqual(r({ A: 4, B: 4, C: 4 }, 11), { A: 1, B: 1, C: 1 }); // cada obra por separado
+  // El caso de la oficina: misma cantidad de horas en cada obra -> mismos días
+  assert.deepStrictEqual(r({ Gala: 10, Selenza: 10, Chacho: 10 }, 11), { Gala: 1, Selenza: 1, Chacho: 1 });
+  assert.deepStrictEqual(r({ Selenza: 10, Chacho: 10 }, 11), { Selenza: 1, Chacho: 1 });
   assert.deepStrictEqual(r({ A: 60, B: 36 }, 11), { A: 7, B: 4 });    // 12 -> tope 11
   assert.deepStrictEqual(r({}, 11), {});
 });
@@ -379,4 +382,16 @@ test('obras sin viático y tope en el JORNAL', () => {
   // En los resúmenes, Gala no suma viático
   const r = JSON.parse(JSON.stringify(G.resumir(resp, ['Ana', 'Beto'], 96, obras, 11)));
   assert.deepStrictEqual(r.porObra.map(f => [f[0], f[6], f[7]]), [['Gala', 5, 0], ['Summit', 17, 18]]);
+});
+
+test('JORNAL: el caso de la oficina (10 h en Gala, Selenza y Chacho)', () => {
+  const resp = ['Gala', 'Selenza', 'Chacho'].map(obra => ({ trabajador: 'Ana', obra, horas: 10 }));
+  const obras = { Gala: { centro: '8', sinViatico: true }, Selenza: { centro: 'SELENZA', viatico60: true }, Chacho: { centro: 'CHACHO' } };
+  const j = JSON.parse(JSON.stringify(G.armarJornales(resp, { Ana: { numero: 46 } }, obras, 11)));
+  // [obra, descanso, viático 20%, viático 60%, tickets]
+  assert.deepStrictEqual(j.map(x => [x.obra, x.filas[0][4], x.filas[0][5], x.filas[0][6], x.filas[0][7]]), [
+    ['Chacho', 1, 1, '', 1.25],
+    ['Gala', 1, '', '', 1.25],
+    ['Selenza', 1, '', 1, 1.25]
+  ]);
 });
