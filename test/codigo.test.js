@@ -340,7 +340,7 @@ test('generar los archivos JORNAL desde la planilla', () => {
   const mov = creados[1].hoja;
   assert.strictEqual(mov.getName(), 'Movimientos');
   const v = mov.valores();
-  assert.deepStrictEqual(v[0].slice(0, 4), ['10', '', 'C102', 'C106']);
+  assert.deepStrictEqual(v[0].slice(0, 4), ['2', '', 'C102', 'C106']); // A1 siempre "2"; el centro (10) va en el nombre
   assert.deepStrictEqual(v[1].slice(0, 3), ['', 'Nombre', 'Horas Normales          ']);
   assert.deepStrictEqual(v[2], [101, 'Juan Pérez', 18, '', 2, '', 2, 2.25, 18, 18, 18, 18, '', '', '', '', '']);
   assert.match(dialogos.at(-1)[1], /export\?format=xlsx/);

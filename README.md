@@ -102,10 +102,10 @@ esas fechas en **Configuración** y usar **Horas → 2. Actualizar resumen**.
 
 **Horas → 4. Generar planillas para sueldos (JORNAL)** crea en Google Drive una carpeta con un
 archivo por obra, en el formato de importación del programa de sueldos (hoja *Movimientos*):
-centro de costos en A1, códigos de concepto en la fila 1, títulos en la fila 2 y un renglón por
+"2" en A1 (lo pide el programa), códigos de concepto en la fila 1, títulos en la fila 2 y un renglón por
 trabajador (Nº de funcionario, nombre, horas normales, descanso pago, viático 20% o 60%, tickets,
 presentismo semanal, ropa, transporte y herramientas). La ventana tiene un link para descargar
-cada uno en Excel.
+cada uno en Excel. El centro de costos de cada obra va en el nombre del archivo ("JORNAL 10 - Atlantico 2").
 
 Para que salgan completos:
 - **Obras:** columna C *Centro de costos*, casilla D *Viático 60%* y casilla E *Sin viático*.

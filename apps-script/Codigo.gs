@@ -39,7 +39,9 @@ var CONCEPTOS = [
 function diasTrabajados(h) { return Math.round(h / HORAS_JORNADA); }
 
 // Formato de importación del programa de sueldos (archivo JORNAL, hoja "Movimientos").
-// Fila 1: centro de costos en A1 y códigos de concepto; fila 2: títulos; después un renglón por trabajador.
+// Fila 1: "2" en A1 (lo exige el programa) y códigos de concepto; fila 2: títulos; después un renglón por
+// trabajador. El centro de costos de la obra va en el nombre del archivo.
+var JORNAL_A1 = '2';
 var JORNAL_CODIGOS = ['C102', 'C106', 'C108', 'C132', 'C133', 'C152', 'C111', 'C115', 'C114', 'C116', 'C112', 'I601', 'I651', 'C649', 'C518'];
 var JORNAL_TITULOS = ['Horas Normales          ', 'Jornal Feriado NoTrabaja', 'Descanso Pago           ', 'Viatico 20%             ',
   'Viatico 60%             ', 'Tickets Alimentacion $  ', 'Presentismo Semanal     ', 'Ropa                    ',
@@ -793,7 +795,7 @@ function generarJornales() {
     var h = ss.getSheets()[0].setName('Movimientos');
     var ancho = 2 + JORNAL_CODIGOS.length;
     h.getRange(1, 1, 2, ancho).setNumberFormat('@').setValues([
-      [j.centro, ''].concat(JORNAL_CODIGOS),
+      [JORNAL_A1, ''].concat(JORNAL_CODIGOS),
       ['', 'Nombre'].concat(JORNAL_TITULOS)
     ]);
     h.getRange(3, 1, j.filas.length, ancho).setValues(j.filas);
