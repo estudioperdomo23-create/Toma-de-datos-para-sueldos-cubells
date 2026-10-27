@@ -15,6 +15,7 @@ var HOJA = {
   OBRAS: 'Obras',
   TRABAJADORES: 'Trabajadores',
   RESPUESTAS: 'Respuestas',
+  FERIADOS: 'Feriados',
   POR_OBRA: 'Resumen por obra',
   DETALLE: 'Detalle por trabajador',
   CONTROL: 'Control'
@@ -52,6 +53,9 @@ var JORNAL_TITULOS = ['Horas Normales          ', 'Jornal Feriado NoTrabaja', 'D
 var PREFIJO_OTRA = 'Otra: ';
 // Renglón de Respuestas con las horas extra de la quincena (no es una obra)
 var FILA_EXTRA = 'Horas extra';
+
+// Carpeta de Google Drive donde quedan los reportes generados (una subcarpeta por quincena)
+var CARPETA_RESPALDO = 'RESPALDO SUELDOS CUBELLS';
 
 var MENSAJE_PREDETERMINADO =
   'Hola {nombre}, por favor cargá tus horas de la quincena del {desde} al {hasta} en este link: {link}';
@@ -405,7 +409,7 @@ function instalar() {
   var ss = libro();
   PropertiesService.getScriptProperties().setProperty('LIBRO_ID', ss.getId());
 
-  var cfg = asegurarHoja(HOJA.CONFIG, ['Parámetro', 'Valor', '', 'Feriados (no se trabaja)']);
+  var cfg = asegurarHoja(HOJA.CONFIG, ['Parámetro', 'Valor']);
   if (!cfg.getRange('A2').getValue()) {
     var q = quincenaDe(Utilities.formatDate(new Date(), zona(), 'yyyy-MM-dd'));
     cfg.getRange('A2:B5').setValues([
@@ -415,10 +419,9 @@ function instalar() {
       ['Mensaje de WhatsApp', MENSAJE_PREDETERMINADO]
     ]);
     cfg.getRange('B2:B3').setNumberFormat('dd/mm/yyyy');
-    cfg.getRange('D2:D40').setNumberFormat('dd/mm/yyyy');
-    cfg.getRange('A8').setValue('Horario normal: lunes a jueves 9 h, viernes 8 h. Ticket, descanso pago y viático = horas ÷ 8.')
+    cfg.getRange('A8').setValue('Horario normal: lunes a jueves 9 h, viernes 8 h. Los feriados se cargan en la hoja "Feriados".')
       .setFontStyle('italic');
-    cfg.setColumnWidth(1, 170); cfg.setColumnWidth(2, 420); cfg.setColumnWidth(4, 190);
+    cfg.setColumnWidth(1, 170); cfg.setColumnWidth(2, 420);
   }
 
   if (!cfg.getRange(CFG.PEDIR_CEDULA, 1).getValue()) {
@@ -448,6 +451,22 @@ function instalar() {
   trab.setColumnWidth(1, 220); trab.setColumnWidth(5, 300); trab.setColumnWidth(6, 150);
 
   asegurarHoja(HOJA.RESPUESTAS, ['Enviado', 'Quincena desde', 'Quincena hasta', 'Trabajador', 'Obra', 'Horas']);
+
+  // Feriados del año en su propia hoja. Los que estaban en Configuración (columna D) se pasan acá.
+  var nuevaFeriados = !ss.getSheetByName(HOJA.FERIADOS);
+  var fer = asegurarHoja(HOJA.FERIADOS, ['Fecha', 'Motivo']);
+  if (nuevaFeriados) {
+    var viejos = cfg.getRange('D2:D60').getValues().filter(function (r) { return r[0] instanceof Date || /\d/.test(String(r[0])); });
+    if (viejos.length) {
+      fer.getRange(2, 1, viejos.length, 1).setValues(viejos);
+      cfg.getRange('D2:D60').clearContent();
+    }
+    if (cfg.getRange('D1').getValue()) cfg.getRange('D1').setValue('(Los feriados están en la hoja "Feriados")');
+    fer.getRange('A2:A400').setNumberFormat('dd/mm/yyyy');
+    fer.getRange('D1').setValue('Cargá acá todos los feriados del año (una fecha por fila). Se descuentan solos de cada quincena.')
+      .setFontStyle('italic');
+    fer.setColumnWidth(1, 110); fer.setColumnWidth(2, 240);
+  }
   asegurarHoja(HOJA.POR_OBRA, []);
   asegurarHoja(HOJA.DETALLE, []);
   asegurarHoja(HOJA.CONTROL, []);
@@ -472,9 +491,12 @@ function leerConfig() {
   var cfg = hoja(HOJA.CONFIG);
   var desde = aIso(cfg.getRange(CFG.DESDE, 2).getValue());
   var hasta = aIso(cfg.getRange(CFG.HASTA, 2).getValue());
-  var feriados = cfg.getRange('D2:D60').getValues()
+  var fechas = cfg.getRange('D2:D60').getValues();
+  var hf = hoja(HOJA.FERIADOS);
+  if (hf && hf.getLastRow() >= 2) fechas = fechas.concat(hf.getRange(2, 1, hf.getLastRow() - 1, 1).getValues());
+  var feriados = fechas
     .map(function (r) { return r[0] ? aIso(r[0]) : ''; })
-    .filter(function (f) { return f; });
+    .filter(function (f) { return /^\d{4}-\d{2}-\d{2}$/.test(f); });
   return {
     desde: desde,
     hasta: hasta,
@@ -577,6 +599,22 @@ function escaparHtml(s) {
   return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
 }
 
+/** Carpeta de la quincena dentro de RESPALDO SUELDOS CUBELLS (las crea si no existen). */
+function carpetaQuincena_(cfg) {
+  var raiz = buscarOCrearCarpeta_(DriveApp, CARPETA_RESPALDO);
+  return buscarOCrearCarpeta_(raiz, 'Quincena ' + isoATexto(cfg.desde).replace(/\//g, '-') + ' al ' +
+    isoATexto(cfg.hasta).replace(/\//g, '-'));
+}
+
+function buscarOCrearCarpeta_(padre, nombre) {
+  var it = padre.getFoldersByName(nombre);
+  while (it.hasNext()) {
+    var c = it.next();
+    if (!c.isTrashed()) return c;
+  }
+  return padre.createFolder(nombre);
+}
+
 /** Rehace las hojas de resumen para la quincena de Configuración. */
 function actualizarResumen() {
   var cfg = leerConfig();
@@ -650,12 +688,22 @@ function pasarQuincenaSiguiente() {
 function descargarExcel() {
   actualizarResumen();
   var cfg = leerConfig();
-  var url = 'https://docs.google.com/spreadsheets/d/' + libro().getId() + '/export?format=xlsx';
+  // Copia del resumen (solo las hojas de resumen) guardada en el respaldo de la quincena
+  var hora = Utilities.formatDate(new Date(), zona(), 'dd-MM HH.mm');
+  var carpeta = carpetaQuincena_(cfg);
+  var copia = SpreadsheetApp.create('Resumen ' + isoATexto(cfg.desde).replace(/\//g, '-') + ' al ' +
+    isoATexto(cfg.hasta).replace(/\//g, '-') + ' (generado ' + hora + ')');
+  var vacia = copia.getSheets()[0];
+  [HOJA.POR_OBRA, HOJA.DETALLE, HOJA.CONTROL].forEach(function (n) { hoja(n).copyTo(copia).setName(n); });
+  copia.deleteSheet(vacia);
+  DriveApp.getFileById(copia.getId()).moveTo(carpeta);
+  var url = 'https://docs.google.com/spreadsheets/d/' + copia.getId() + '/export?format=xlsx';
   var html = HtmlService.createHtmlOutput(
     '<div style="font:14px sans-serif"><p>Resumen actualizado (quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) + ').</p>' +
     '<p><a href="' + url + '" target="_blank" style="font-size:16px">Descargar el Excel</a></p>' +
-    '<p style="color:#666">Incluye las hojas "Resumen por obra", "Detalle por trabajador" y "Control".</p></div>'
-  ).setWidth(380).setHeight(170);
+    '<p style="color:#666">Incluye las hojas "Resumen por obra", "Detalle por trabajador" y "Control". Quedó una copia en ' +
+    '<a href="' + carpeta.getUrl() + '" target="_blank">' + escaparHtml(CARPETA_RESPALDO) + '</a>.</p></div>'
+  ).setWidth(400).setHeight(200);
   SpreadsheetApp.getUi().showModalDialog(html, 'Descargar Excel');
 }
 
@@ -838,8 +886,7 @@ function generarJornales() {
   }
 
   var hora = Utilities.formatDate(new Date(), zona(), 'dd-MM HH.mm');
-  var carpeta = DriveApp.createFolder('Sueldos ' + isoATexto(cfg.desde).replace(/\//g, '-') + ' al ' +
-    isoATexto(cfg.hasta).replace(/\//g, '-') + ' (generado ' + hora + ')');
+  var carpeta = carpetaQuincena_(cfg).createFolder('JORNAL (generado ' + hora + ')');
   var filasHtml = jornales.map(function (j) {
     var nombre = 'JORNAL ' + (j.centro || 'SIN CENTRO') + ' - ' + j.obra;
     var ss = SpreadsheetApp.create(nombre);
@@ -861,7 +908,8 @@ function generarJornales() {
     '<div style="font:13px sans-serif"><p>Quincena del ' + isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) +
     '. Un archivo por obra, con el formato del JORNAL.</p>' +
     '<table style="border-collapse:collapse;width:100%" cellpadding="4"><tr style="text-align:left"><th>Obra</th><th>Centro</th><th>Trab.</th><th></th></tr>' +
-    filasHtml + '</table>' + textoMes + '<p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a></p>' +
+    filasHtml + '</table>' + textoMes + '<p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a> (' +
+    escaparHtml(CARPETA_RESPALDO) + ')</p>' +
     '<p style="color:#666">Las horas extra no van en estos archivos (se ven en la hoja Control).</p></div>'
   ).setWidth(520).setHeight(Math.min(600, 190 + jornales.length * 34 + (textoMes ? 60 : 0)));
   SpreadsheetApp.getUi().showModalDialog(html, 'Planillas para sueldos');

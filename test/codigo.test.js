@@ -81,7 +81,7 @@ function prepararLibro() {
 test('instalar crea las hojas', () => {
   const { libro } = prepararLibro();
   assert.deepStrictEqual(libro.getSheets().map(h => h.getName()), [
-    'Configuración', 'Obras', 'Trabajadores', 'Respuestas', 'Resumen por obra', 'Detalle por trabajador', 'Control'
+    'Configuración', 'Obras', 'Trabajadores', 'Respuestas', 'Feriados', 'Resumen por obra', 'Detalle por trabajador', 'Control'
   ]);
 });
 
@@ -439,4 +439,61 @@ test('generar JORNAL a fin de mes pone el presentismo del mes', () => {
   assert.match(dialogos.at(-1)[1], /Presentismo Mes Completo<\/b> \(horas normales del mes: 193\): Juan Pérez\./);
   const filas = creados[0].hoja.valores().slice(2);
   assert.deepStrictEqual(filas.map(f => [f[1], f[12]]), [['Ana Gómez', ''], ['Juan Pérez', 1]]);
+});
+
+test('feriados del año en la hoja Feriados', () => {
+  const { ctx, hoja } = prepararLibro();
+  const fer = hoja('Feriados');
+  assert.deepStrictEqual(fer.valores()[0].slice(0, 2), ['Fecha', 'Motivo']);
+  // Feriados de todo el año: solo descuentan los de la quincena
+  fer.getRange('A2:B4').setValues([[ctx.isoAFecha('2026-01-01'), 'Año Nuevo'], [ctx.isoAFecha('2026-10-19'), 'Prueba'], ['25/12/2026', 'Navidad']]);
+  const cfg = ctx.leerConfig();
+  assert.strictEqual(cfg.esperadas, 87);     // 96 - lunes 19/10
+  assert.strictEqual(cfg.diasHabiles, 10);   // 11 - 1
+  assert.ok(cfg.feriados.includes('2026-12-25'));
+});
+
+test('instalar pasa los feriados viejos de Configuración a la hoja Feriados', () => {
+  const { ctx, libro, hoja } = prepararLibro();
+  // Planilla instalada con la versión anterior: feriados en Configuración, columna D, y sin hoja Feriados
+  libro.deleteSheet(hoja('Feriados'));
+  const cfg = hoja('Configuración');
+  cfg.getRange('D1:D3').setValues([['Feriados (no se trabaja)'], [ctx.isoAFecha('2026-10-19')], [ctx.isoAFecha('2026-11-02')]]);
+  ctx.instalar();
+  assert.deepStrictEqual(hoja('Feriados').valores().slice(1).map(r => ctx.fechaAIso(r[0])), ['2026-10-19', '2026-11-02']);
+  assert.strictEqual(cfg.getRange('D2').getValue(), '');
+  assert.match(cfg.getRange('D1').getValue(), /hoja "Feriados"/);
+  assert.strictEqual(ctx.leerConfig().esperadas, 87);
+  // Volver a instalar no duplica ni borra
+  hoja('Feriados').getRange('B2').setValue('Prueba');
+  ctx.instalar();
+  assert.strictEqual(hoja('Feriados').getLastRow(), 3);
+  assert.strictEqual(hoja('Feriados').getRange('B2').getValue(), 'Prueba');
+});
+
+test('respaldo en RESPALDO SUELDOS CUBELLS, una carpeta por quincena', () => {
+  const { ctx, hoja, carpetas, ruta, creados, dialogos } = prepararLibro();
+  hoja('Obras').getRange('C2').setValue('10');
+  ctx.guardarRespuesta({ trabajador: 'Juan Pérez', items: [{ obra: 'Edificio Pocitos', horas: 96 }] });
+
+  ctx.generarJornales();
+  ctx.generarJornales(); // dos veces: misma carpeta de quincena, dos subcarpetas de JORNAL
+  ctx.descargarExcel();
+
+  const rutas = carpetas.map(ruta);
+  assert.strictEqual(rutas.filter(r => r === 'RESPALDO SUELDOS CUBELLS').length, 1);
+  assert.strictEqual(rutas.filter(r => r === 'RESPALDO SUELDOS CUBELLS/Quincena 16-10-2026 al 31-10-2026').length, 1);
+  assert.strictEqual(rutas.filter(r => /^RESPALDO SUELDOS CUBELLS\/Quincena 16-10-2026 al 31-10-2026\/JORNAL \(generado /.test(r)).length, 2);
+  const quincena = carpetas.find(c => ruta(c) === 'RESPALDO SUELDOS CUBELLS/Quincena 16-10-2026 al 31-10-2026');
+  const jornal = quincena.hijos[0];
+  assert.strictEqual(jornal.archivos.length, 1); // el JORNAL de Edificio Pocitos
+
+  // La copia del resumen: solo las tres hojas de resumen, guardada en la carpeta de la quincena
+  const resumen = creados.at(-1);
+  assert.match(resumen.nombre, /^Resumen 16-10-2026 al 31-10-2026 \(generado /);
+  assert.deepStrictEqual(resumen.ss.getSheets().map(h => h.getName()), ['Resumen por obra', 'Detalle por trabajador', 'Control']);
+  assert.strictEqual(resumen.ss.getSheets()[0].getRange('A3').getValue(), 'Edificio Pocitos');
+  assert.deepStrictEqual(quincena.archivos, [resumen.id]);
+  assert.match(dialogos.at(-1)[1], new RegExp(resumen.id + '/export\\?format=xlsx'));
+  assert.match(dialogos.at(-1)[1], /RESPALDO SUELDOS CUBELLS/);
 });

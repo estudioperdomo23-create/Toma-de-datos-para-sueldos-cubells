@@ -13,6 +13,13 @@ function a1(ref) {
 class Hoja {
   constructor(nombre) { this.nombre = nombre; this.celdas = []; this.links = {}; }
   getName() { return this.nombre; }
+  setName(n) { this.nombre = n; return this; }
+  copyTo(libroDestino) {
+    const c = new Hoja('Copia de ' + this.nombre);
+    c.celdas = this.celdas.map(r => (r ? r.slice() : r));
+    libroDestino.hojas.push(c);
+    return c;
+  }
   get(f, c) { return (this.celdas[f - 1] || [])[c - 1] ?? ''; }
   set(f, c, v) { (this.celdas[f - 1] = this.celdas[f - 1] || [])[c - 1] = v; }
   getLastRow() {
@@ -55,6 +62,10 @@ class Rango {
     return this;
   }
 }
+Rango.prototype.clearContent = function () {
+  for (let i = 0; i < this.nf; i++) for (let j = 0; j < this.nc; j++) this.h.set(this.f + i, this.c + j, '');
+  return this;
+};
 for (const m of ['setNumberFormat', 'setFontWeight', 'setFontSize', 'setFontStyle', 'setBackground', 'setBackgrounds']) {
   Rango.prototype[m] = function () { return this; };
 }
@@ -78,15 +89,35 @@ function crearEntorno(opciones = {}) {
   const props = {};
   const cache = {};
   const creados = [];
+  // Carpetas de Drive simuladas
+  const carpetas = [];
+  const iterar = (lista) => { let i = 0; return { hasNext: () => i < lista.length, next: () => lista[i++] }; };
+  const ruta = (c) => (c.padre && c.padre.padre ? ruta(c.padre) + '/' : '') + c.nombre;
+  function carpeta(nombre, padre) {
+    const c = {
+      nombre, padre, hijos: [], archivos: [], papelera: false,
+      isTrashed: () => c.papelera,
+      getUrl: () => 'https://drive.google.com/carpeta/' + encodeURIComponent(ruta(c)),
+      createFolder(n) { const h = carpeta(n, c); c.hijos.push(h); return h; },
+      getFoldersByName: (n) => iterar(c.hijos.filter(h => h.nombre === n))
+    };
+    carpetas.push(c);
+    return c;
+  }
+  const raiz = carpeta('Mi unidad', null);
   const ctx = {
     console,
     SpreadsheetApp: {
       create: (nombre) => {
-        const h = new Hoja('Hoja 1');
-        h.setName = (n) => { h.nombre = n; return h; };
         const id = 'NUEVO' + creados.length;
-        creados.push({ nombre, hoja: h, id });
-        return { getId: () => id, getSheets: () => [h] };
+        const ss = {
+          hojas: [new Hoja('Hoja 1')],
+          getId: () => id,
+          getSheets() { return this.hojas.slice(); },
+          deleteSheet(h) { this.hojas = this.hojas.filter(x => x !== h); }
+        };
+        creados.push({ nombre, id, ss, get hoja() { return ss.hojas[0]; } });
+        return ss;
       },
       getActiveSpreadsheet: () => libro,
       openById: () => libro,
@@ -113,8 +144,9 @@ function crearEntorno(opciones = {}) {
     PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = v; }, getProperty: (k) => props[k] }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     DriveApp: {
-      createFolder: (n) => ({ getUrl: () => 'https://drive.google.com/carpeta/' + encodeURIComponent(n) }),
-      getFileById: () => ({ moveTo() {} })
+      createFolder: (n) => raiz.createFolder(n),
+      getFoldersByName: (n) => iterar(carpetas.filter(c => c.nombre === n)),
+      getFileById: (id) => ({ moveTo(c) { c.archivos.push(id); } })
     },
     CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Utilities: {
@@ -129,7 +161,7 @@ function crearEntorno(opciones = {}) {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Codigo.gs'), 'utf8'), ctx, { filename: 'Codigo.gs' });
-  return { ctx, libro, dialogos, creados, hoja: (n) => libro.getSheetByName(n) };
+  return { ctx, libro, dialogos, creados, carpetas, ruta, hoja: (n) => libro.getSheetByName(n) };
 }
 
 module.exports = { crearEntorno };

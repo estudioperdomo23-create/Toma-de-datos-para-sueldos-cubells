@@ -32,20 +32,21 @@ arma sola el resumen por obra con los conceptos para sueldos.
 
 Descanso pago y viático se calculan en cada obra (horas de la obra ÷ 8, redondeado), así misma
 cantidad de horas da los mismos días. Para cada trabajador, ninguno de los dos puede superar los
-**días hábiles** de la quincena (lunes a viernes, sin los feriados de Configuración); si se pasa,
+**días hábiles** de la quincena (lunes a viernes, sin los feriados de la hoja **Feriados**); si se pasa,
 el tope se reparte entre sus obras en proporción a las horas.
 
 **Horas extra:** se muestran aparte (hojas Detalle, Control y al pie del Resumen por obra); no se
 suman a las obras ni a los conceptos.
 
 **Horario normal:** lunes a jueves 9 h, viernes 8 h. Se usa para controlar el total de cada
-trabajador (hoja **Control**). Los feriados que se anotan en **Configuración** no se cuentan.
+trabajador (hoja **Control**). Los feriados de la hoja **Feriados** no se cuentan.
 
 ### Hojas de la planilla
 
 | Hoja | Para qué |
 |---|---|
-| Configuración | Fechas de la quincena, link del formulario, texto del mensaje, feriados. |
+| Configuración | Fechas de la quincena, link del formulario, texto del mensaje, pedir cédula. |
+| Feriados | Todos los feriados del año, cargados de una vez (fecha y motivo). Cada quincena descuenta los suyos. |
 | Obras | Lista de obras. Solo aparecen en el formulario las que tienen **Activa** tildada. |
 | Trabajadores | Nombre, celular, **Activo** y **Cédula** (columna G). La herramienta completa el código, el link personal y el botón **Enviar**. |
 | Respuestas | Todo lo que mandan los trabajadores (un renglón por obra). Queda el historial de todas las quincenas. |
@@ -84,8 +85,8 @@ Hace falta una cuenta de Google y hacerlo desde una computadora.
 
 ## Uso cada quincena
 
-1. **Horas → Pasar a la quincena siguiente** (o cambiar las fechas en **Configuración**). Anotar
-   los feriados de la quincena, si hay.
+1. **Horas → Pasar a la quincena siguiente** (o cambiar las fechas en **Configuración**). Los
+   feriados se toman solos de la hoja **Feriados** (conviene cargar todos los del año a principio de año).
 2. **Horas → 1. Preparar mensajes de WhatsApp**.
    - *Al grupo o a una lista de difusión:* copiar el mensaje que aparece y mandarlo una sola vez.
      Si en **Configuración** está tildado *Pedir cédula (link general)*, cada uno entra con su
@@ -118,8 +119,16 @@ Las obras "Otra" salen sin centro de costos (hay que asignarlo a mano) y las hor
 **Presentismo Mes Completo (columna M):** en la quincena que termina el último día del mes, lleva
 un **1** quien trabajó todas las horas normales del mes (sus horas en obras de las dos quincenas,
 sin horas extra, llegan a lunes a jueves 9 h y viernes 8 h del mes, sin feriados). Va solo en la
-planilla de su obra con más horas en la quincena. Para que el cálculo sea correcto, en
-Configuración tienen que estar anotados los feriados de **todo el mes**.
+planilla de su obra con más horas en la quincena.
+
+## Respaldo en Google Drive
+
+Todo lo que se genera queda guardado en la carpeta **RESPALDO SUELDOS CUBELLS** de Google Drive,
+con una subcarpeta por quincena (*Quincena 16-10-2026 al 31-10-2026*):
+- **Horas → 3. Descargar Excel** guarda una copia del resumen (Resumen por obra, Detalle por
+  trabajador y Control).
+- **Horas → 4. Generar planillas para sueldos** guarda los JORNAL en una subcarpeta
+  *JORNAL (generado …)*.
 
 ## Cambios en el código
 
