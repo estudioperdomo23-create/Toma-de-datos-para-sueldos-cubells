@@ -46,7 +46,7 @@ trabajador (hoja **Control**). Los feriados de la hoja **Feriados** no se cuenta
 | Hoja | Para qué |
 |---|---|
 | Configuración | Fechas de la quincena, link del formulario, texto del mensaje, pedir cédula. |
-| Feriados | Todos los feriados del año, cargados de una vez (fecha y motivo). Cada quincena descuenta los suyos. |
+| Feriados | Todos los feriados, cargados de una vez (fecha y motivo). Con año (25/12/2026) valen ese año; sin año (`="25/12"`) valen todos los años. Cada quincena descuenta los suyos. |
 | Obras | Lista de obras. Solo aparecen en el formulario las que tienen **Activa** tildada. |
 | Trabajadores | Nombre, celular, **Activo** y **Cédula** (columna G). La herramienta completa el código, el link personal y el botón **Enviar**. |
 | Respuestas | Todo lo que mandan los trabajadores (un renglón por obra). Queda el historial de todas las quincenas. |

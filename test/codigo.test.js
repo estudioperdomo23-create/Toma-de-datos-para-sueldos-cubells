@@ -497,3 +497,21 @@ test('respaldo en RESPALDO SUELDOS CUBELLS, una carpeta por quincena', () => {
   assert.match(dialogos.at(-1)[1], new RegExp(resumen.id + '/export\\?format=xlsx'));
   assert.match(dialogos.at(-1)[1], /RESPALDO SUELDOS CUBELLS/);
 });
+
+test('feriados sin año (dd/mm) valen para todos los años', () => {
+  const f = (v, a) => Array.from(G.fechasDeFeriado(v, a));
+  assert.deepStrictEqual(f('19/10', [2026, 2026]), ['2026-10-19']);
+  assert.deepStrictEqual(f(' 1/1 ', [2026, 2027]), ['2026-01-01', '2027-01-01']); // quincena que cruza el año
+  assert.deepStrictEqual(f('25/12/2026', [2027, 2027]), ['2026-12-25']);          // con año: solo ese año
+  assert.deepStrictEqual(f('2/11/26', [2026, 2026]), ['2026-11-02']);
+  assert.deepStrictEqual(f('2026-11-02', [2026, 2026]), ['2026-11-02']);
+  assert.deepStrictEqual(f('31/02', [2026, 2026]), []);
+  assert.deepStrictEqual(f('Navidad', [2026, 2026]), []);
+  assert.deepStrictEqual(f('', [2026, 2026]), []);
+
+  const { ctx, hoja } = prepararLibro();
+  hoja('Feriados').getRange('A2:A3').setValues([['19/10'], ['25/12']]); // como queda con ="19/10"
+  const cfg = ctx.leerConfig();
+  assert.strictEqual(cfg.esperadas, 87);
+  assert.deepStrictEqual(Array.from(cfg.feriados), ['2026-10-19', '2026-12-25']);
+});

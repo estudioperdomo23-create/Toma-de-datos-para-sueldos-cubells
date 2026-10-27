@@ -91,6 +91,30 @@ function horasEsperadas(desdeIso, hastaIso, feriadosIso) {
   return total;
 }
 
+/**
+ * Fechas (yyyy-mm-dd) de un feriado tal como está escrito en la hoja Feriados.
+ * "25/12/2026" o una fecha -> ese día; "19/10" (sin año) -> ese día en cada uno de los años dados.
+ */
+function fechasDeFeriado(valor, anios) {
+  var t = String(valor == null ? '' : valor).trim(), m;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return [t];
+  if ((m = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/.exec(t))) {
+    var y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    return fechaValida_(y, +m[2], +m[1]) ? [fechaAIso(new Date(y, m[2] - 1, +m[1], 12))] : [];
+  }
+  if ((m = /^(\d{1,2})[\/-](\d{1,2})$/.exec(t))) {
+    var vistos = Object.create(null);
+    return anios.filter(function (a) { return !vistos[a] && (vistos[a] = true) && fechaValida_(a, +m[2], +m[1]); })
+      .map(function (a) { return fechaAIso(new Date(a, m[2] - 1, +m[1], 12)); });
+  }
+  return [];
+}
+
+function fechaValida_(y, mes, dia) {
+  var d = new Date(y, mes - 1, dia, 12);
+  return mes >= 1 && mes <= 12 && d.getMonth() === mes - 1 && d.getDate() === dia;
+}
+
 /** Días hábiles entre dos fechas (inclusive): lunes a viernes, sin feriados. */
 function diasHabiles(desdeIso, hastaIso, feriadosIso) {
   var feriados = Object.create(null);
@@ -463,7 +487,7 @@ function instalar() {
     }
     if (cfg.getRange('D1').getValue()) cfg.getRange('D1').setValue('(Los feriados están en la hoja "Feriados")');
     fer.getRange('A2:A400').setNumberFormat('dd/mm/yyyy');
-    fer.getRange('D1').setValue('Cargá acá todos los feriados del año (una fecha por fila). Se descuentan solos de cada quincena.')
+    fer.getRange('D1').setValue('Una fecha por fila. Con año (25/12/2026) vale para ese año; sin año (="25/12") vale para todos los años.')
       .setFontStyle('italic');
     fer.setColumnWidth(1, 110); fer.setColumnWidth(2, 240);
   }
@@ -494,9 +518,11 @@ function leerConfig() {
   var fechas = cfg.getRange('D2:D60').getValues();
   var hf = hoja(HOJA.FERIADOS);
   if (hf && hf.getLastRow() >= 2) fechas = fechas.concat(hf.getRange(2, 1, hf.getLastRow() - 1, 1).getValues());
-  var feriados = fechas
-    .map(function (r) { return r[0] ? aIso(r[0]) : ''; })
-    .filter(function (f) { return /^\d{4}-\d{2}-\d{2}$/.test(f); });
+  var anios = [Number(desde.slice(0, 4)), Number(hasta.slice(0, 4))];
+  var feriados = [];
+  fechas.forEach(function (r) {
+    feriados = feriados.concat(fechasDeFeriado(r[0] instanceof Date ? aIso(r[0]) : r[0], anios));
+  });
   return {
     desde: desde,
     hasta: hasta,
