@@ -54,6 +54,7 @@
   .aviso { border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 15px; }
   .aviso.warn { background: var(--warn-bg); color: var(--warn-text); }
   .aviso.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .aviso.info { background: var(--sel); color: var(--text); border: 1px solid var(--border); }
   .error { color: var(--err); font-size: 15px; margin-top: 8px; }
   .listo { text-align: center; padding: 30px 10px; }
   .listo .check { font-size: 48px; color: var(--accent); }
@@ -72,6 +73,7 @@
 <main id="app">
   <h1>Horas de la quincena</h1>
   <p class="sub" id="periodo"></p>
+  <div class="aviso info" id="feriadosAviso" hidden></div>
 
   <div id="cargando" class="panel">Cargando…</div>
 
@@ -135,7 +137,7 @@
   </div>
 </div>
 
-<script src="config.js?v=12"></script>
+<script src="config.js?v=13"></script>
 <script>
   var DATOS = null;
   var CEDULA = ''; // cédula con la que se identificó (link general)
@@ -214,6 +216,7 @@
   function iniciar() {
     $('periodo').textContent = 'Del ' + DATOS.desde + ' al ' + DATOS.hasta +
       ' · ' + DATOS.esperadas + ' horas normales (lunes a jueves 9 h, viernes 8 h)';
+    mostrarFeriados(DATOS.feriados || []);
     var pide = !!DATOS.pideCedula;
     $('cedulaPanel').hidden = !pide;
     $('formulario').hidden = $('barra').hidden = pide;
@@ -235,6 +238,20 @@
     dibujarObras();
     dibujarOtras();
     actualizarTotal();
+  }
+
+  // "Feriado: lunes 19/10 (Día de la Raza). Ya está descontado de las horas normales."
+  function mostrarFeriados(lista) {
+    var el = $('feriadosAviso');
+    el.hidden = !lista.length;
+    if (!lista.length) return;
+    var partes = lista.map(function (f) { return f.dia + ' ' + f.fecha + (f.motivo ? ' (' + f.motivo + ')' : ''); });
+    var texto = partes.length === 1 ? partes[0] : partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1];
+    el.innerHTML = '';
+    var b = document.createElement('b'); b.textContent = (lista.length === 1 ? 'Feriado: ' : 'Feriados: ');
+    el.appendChild(b);
+    el.appendChild(document.createTextNode(texto + '. ' +
+      (lista.length === 1 ? 'Ya está descontado' : 'Ya están descontados') + ' de las horas normales.'));
   }
 
   function cargarAnterior(items) {

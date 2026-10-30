@@ -115,6 +115,22 @@ function fechaValida_(y, mes, dia) {
   return mes >= 1 && mes <= 12 && d.getMonth() === mes - 1 && d.getDate() === dia;
 }
 
+var NOMBRES_DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/**
+ * Feriados que caen en días hábiles (lunes a viernes) de la quincena, para avisarle al trabajador.
+ * Devuelve [{fecha: 'dd/mm', dia: 'lunes', motivo}] ordenado por fecha.
+ */
+function feriadosDeQuincena(desdeIso, hastaIso, feriadosIso, motivos) {
+  var vistos = Object.create(null);
+  return (feriadosIso || []).filter(function (f) {
+    if (vistos[f] || f < desdeIso || f > hastaIso || !HORAS_POR_DIA[isoAFecha(f).getDay()]) return false;
+    return (vistos[f] = true);
+  }).sort().map(function (f) {
+    return { fecha: isoATexto(f).slice(0, 5), dia: NOMBRES_DIAS[isoAFecha(f).getDay()], motivo: (motivos && motivos[f]) || '' };
+  });
+}
+
 /** Días hábiles entre dos fechas (inclusive): lunes a viernes, sin feriados. */
 function diasHabiles(desdeIso, hastaIso, feriadosIso) {
   var feriados = Object.create(null);
@@ -515,13 +531,17 @@ function leerConfig() {
   var cfg = hoja(HOJA.CONFIG);
   var desde = aIso(cfg.getRange(CFG.DESDE, 2).getValue());
   var hasta = aIso(cfg.getRange(CFG.HASTA, 2).getValue());
-  var fechas = cfg.getRange('D2:D60').getValues();
+  // [fecha, motivo]: la columna D vieja de Configuración (sin motivo) y la hoja Feriados
+  var filas = cfg.getRange('D2:D60').getValues().map(function (r) { return [r[0], '']; });
   var hf = hoja(HOJA.FERIADOS);
-  if (hf && hf.getLastRow() >= 2) fechas = fechas.concat(hf.getRange(2, 1, hf.getLastRow() - 1, 1).getValues());
+  if (hf && hf.getLastRow() >= 2) filas = filas.concat(hf.getRange(2, 1, hf.getLastRow() - 1, 2).getValues());
   var anios = [Number(desde.slice(0, 4)), Number(hasta.slice(0, 4))];
-  var feriados = [];
-  fechas.forEach(function (r) {
-    feriados = feriados.concat(fechasDeFeriado(r[0] instanceof Date ? aIso(r[0]) : r[0], anios));
+  var feriados = [], motivos = Object.create(null);
+  filas.forEach(function (r) {
+    fechasDeFeriado(r[0] instanceof Date ? aIso(r[0]) : r[0], anios).forEach(function (f) {
+      feriados.push(f);
+      if (!motivos[f]) motivos[f] = String(r[1] == null ? '' : r[1]).trim();
+    });
   });
   return {
     desde: desde,
@@ -530,6 +550,7 @@ function leerConfig() {
     mensaje: String(cfg.getRange(CFG.MENSAJE, 2).getValue()),
     pedirCedula: cfg.getRange(CFG.PEDIR_CEDULA, 2).getValue() === true,
     feriados: feriados,
+    feriadosQuincena: feriadosDeQuincena(desde, hasta, feriados, motivos),
     esperadas: horasEsperadas(desde, hasta, feriados),
     diasHabiles: diasHabiles(desde, hasta, feriados)
   };
@@ -808,6 +829,7 @@ function datosFormulario(codigo, cedula) {
     desde: isoATexto(cfg.desde),
     hasta: isoATexto(cfg.hasta),
     esperadas: cfg.esperadas,
+    feriados: cfg.feriadosQuincena,
     obras: obrasActivas(),
     pideCedula: cfg.pedirCedula && !elegido,
     trabajadores: elegido || cfg.pedirCedula ? [] : lista.map(function (t) { return t.nombre; }).sort(compararTexto),

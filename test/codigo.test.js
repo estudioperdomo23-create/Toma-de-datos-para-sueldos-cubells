@@ -515,3 +515,22 @@ test('feriados sin año (dd/mm) valen para todos los años', () => {
   assert.strictEqual(cfg.esperadas, 87);
   assert.deepStrictEqual(Array.from(cfg.feriados), ['2026-10-19', '2026-12-25']);
 });
+
+test('el formulario recibe los feriados de la quincena con su motivo', () => {
+  const { ctx, hoja } = prepararLibro();
+  hoja('Feriados').getRange('A2:B5').setValues([
+    ['19/10', 'Día de la Raza'],        // lunes, en la quincena
+    ['2/11', 'Difuntos'],               // fuera de la quincena
+    ['24/10', 'Sábado de prueba'],      // sábado: no cambia horas, no se avisa
+    [ctx.isoAFecha('2026-10-30'), '']   // viernes sin motivo
+  ]);
+  const datos = get(ctx, { accion: 'datos' }).resultado;
+  assert.strictEqual(datos.esperadas, 79); // 96 - 9 - 8
+  assert.deepStrictEqual(datos.feriados, [
+    { fecha: '19/10', dia: 'lunes', motivo: 'Día de la Raza' },
+    { fecha: '30/10', dia: 'viernes', motivo: '' }
+  ]);
+  // Sin feriados: lista vacía
+  hoja('Feriados').getRange('A2:B5').clearContent();
+  assert.deepStrictEqual(get(ctx, { accion: 'datos' }).resultado.feriados, []);
+});
