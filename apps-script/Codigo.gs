@@ -24,6 +24,9 @@ var HOJA = {
 // Horario normal por día de la semana (0 = domingo ... 6 = sábado)
 var HORAS_POR_DIA = { 1: 9, 2: 9, 3: 9, 4: 9, 5: 8 };
 
+// Mínimo de horas que cada obra activa tiene que tener en el mes, de al menos un trabajador
+var MINIMO_HORAS_OBRA_MES = 8;
+
 // Horas que equivalen a un día para ticket, descanso pago y viático
 var HORAS_JORNADA = 8;
 
@@ -384,6 +387,27 @@ function esFinDeMes(iso) {
  * Quiénes trabajaron todas las horas posibles del mes: horas en obras (sin horas extra) de todas
  * las respuestas del mes >= horas normales del mes.
  */
+/**
+ * Control de obras del mes: cada obra activa necesita al menos un trabajador con
+ * MINIMO_HORAS_OBRA_MES horas o más en el mes (sin horas extra).
+ * Devuelve las que no cumplen: [{obra, horas, maximo, trabajador}] (horas = total de la obra;
+ * maximo = horas del trabajador que más hizo, trabajador = su nombre).
+ */
+function obrasSinMinimoDelMes(respuestasMes, obras) {
+  var porObra = Object.create(null);
+  respuestasMes.forEach(function (r) {
+    if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
+    var o = porObra[r.obra] = porObra[r.obra] || Object.create(null);
+    o[r.trabajador] = (o[r.trabajador] || 0) + r.horas;
+  });
+  return obras.slice().sort(compararTexto).map(function (obra) {
+    var t = porObra[obra] || Object.create(null);
+    var nombres = Object.keys(t).sort(function (a, b) { return (t[b] - t[a]) || compararTexto(a, b); });
+    var total = nombres.reduce(function (s, n) { return s + t[n]; }, 0);
+    return { obra: obra, horas: redondear(total), maximo: nombres.length ? redondear(t[nombres[0]]) : 0, trabajador: nombres[0] || '' };
+  }).filter(function (o) { return o.maximo < MINIMO_HORAS_OBRA_MES; });
+}
+
 function trabajadoresMesCompleto(respuestasMes, horasDelMes) {
   var horas = Object.create(null);
   respuestasMes.forEach(function (r) {
@@ -438,6 +462,7 @@ function onOpen() {
     .addItem('2. Actualizar resumen', 'actualizarResumen')
     .addItem('3. Descargar Excel', 'descargarExcel')
     .addItem('4. Generar planillas para sueldos (JORNAL)', 'generarJornales')
+    .addItem('5. Control de obras del mes', 'controlObrasDelMes')
     .addSeparator()
     .addItem('Pasar a la quincena siguiente', 'pasarQuincenaSiguiente')
     .addItem('Instalar / reparar hojas', 'instalar')
@@ -596,6 +621,35 @@ function respuestasDelMes(cfg) {
   return datosDeHoja(HOJA.RESPUESTAS)
     .filter(function (r) { return aIso(r[1]) >= inicio && aIso(r[2]) <= cfg.hasta; })
     .map(function (r) { return { trabajador: String(r[3]), obra: String(r[4]), horas: Number(r[5]) || 0 }; });
+}
+
+/** Texto HTML del control de obras del mes que termina en cfg.hasta (lo que va hasta esa fecha). */
+function htmlControlObras_(cfg) {
+  var faltan = obrasSinMinimoDelMes(respuestasDelMes(cfg), obrasActivas());
+  var mes = isoATexto(cfg.hasta).slice(3);
+  if (!faltan.length) {
+    return '<p style="color:#0d6b37"><b>Control de obras del mes ' + mes + ':</b> todas las obras activas tienen al menos un ' +
+      'trabajador con ' + MINIMO_HORAS_OBRA_MES + ' horas o más.</p>';
+  }
+  return '<p style="color:#b3261e"><b>Control de obras del mes ' + mes + ':</b> ' + faltan.length +
+    (faltan.length === 1 ? ' obra no llega' : ' obras no llegan') + ' a ' + MINIMO_HORAS_OBRA_MES +
+    ' horas de un mismo trabajador:</p><ul style="color:#b3261e;margin-top:0">' +
+    faltan.map(function (o) {
+      return '<li><b>' + escaparHtml(o.obra) + '</b>: ' + (o.horas ? o.horas + ' h en total; el que más hizo: ' +
+        escaparHtml(o.trabajador) + ' con ' + o.maximo + ' h' : 'sin horas') + '</li>';
+    }).join('') + '</ul>';
+}
+
+/** Menú: muestra el control de obras del mes (se puede usar en cualquier momento). */
+function controlObrasDelMes() {
+  var cfg = leerConfig();
+  var aviso = esFinDeMes(cfg.hasta) ? '' :
+    '<p style="color:#666">El mes todavía no terminó: se cuentan las respuestas cargadas hasta la quincena del ' +
+    isoATexto(cfg.desde) + ' al ' + isoATexto(cfg.hasta) + '.</p>';
+  var html = HtmlService.createHtmlOutput('<div style="font:13px sans-serif">' + htmlControlObras_(cfg) + aviso +
+    '<p style="color:#666">Se cuentan las obras con "Activa" tildada en la hoja Obras, sin horas extra.</p></div>')
+    .setWidth(480).setHeight(320);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Control de obras del mes');
 }
 
 /** Genera el código, el link personal y el botón de WhatsApp de cada trabajador. */
@@ -925,7 +979,8 @@ function generarJornales() {
     var horasDelMes = horasEsperadas(inicioMes, cfg.hasta, cfg.feriados);
     mesCompleto = trabajadoresMesCompleto(respuestasDelMes(cfg), horasDelMes);
     textoMes = '<p><b>Presentismo Mes Completo</b> (horas normales del mes: ' + horasDelMes + '): ' +
-      (mesCompleto.length ? escaparHtml(mesCompleto.join(', ')) : 'nadie llegó a las horas del mes') + '.</p>';
+      (mesCompleto.length ? escaparHtml(mesCompleto.join(', ')) : 'nadie llegó a las horas del mes') + '.</p>' +
+      htmlControlObras_(cfg);
   }
   var jornales = armarJornales(respuestasDeQuincena(cfg), infoTrabajadores, infoObras(), cfg.diasHabiles, mesCompleto);
   if (!jornales.length) {
@@ -959,6 +1014,6 @@ function generarJornales() {
     filasHtml + '</table>' + textoMes + '<p><a href="' + carpeta.getUrl() + '" target="_blank">Abrir la carpeta en Drive</a> (' +
     escaparHtml(CARPETA_RESPALDO) + ')</p>' +
     '<p style="color:#666">Las horas extra no van en estos archivos (se ven en la hoja Control).</p></div>'
-  ).setWidth(520).setHeight(Math.min(600, 190 + jornales.length * 34 + (textoMes ? 60 : 0)));
+  ).setWidth(520).setHeight(Math.min(640, 190 + jornales.length * 34 + (textoMes ? 140 : 0)));
   SpreadsheetApp.getUi().showModalDialog(html, 'Planillas para sueldos');
 }

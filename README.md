@@ -121,6 +121,13 @@ un **1** quien trabajó todas las horas normales del mes (sus horas en obras de 
 sin horas extra, llegan a lunes a jueves 9 h y viernes 8 h del mes, sin feriados). Va solo en la
 planilla de su obra con más horas en la quincena.
 
+## Control de obras del mes
+
+Cada obra activa tiene que tener en el mes al menos **un trabajador con 8 horas o más** (sumando
+las dos quincenas, sin horas extra). En la quincena que cierra el mes, la ventana de **Horas → 4.
+Generar planillas para sueldos** avisa qué obras no llegan (sin horas, o con horas pero nadie con
+8). También se puede ver en cualquier momento con **Horas → 5. Control de obras del mes**.
+
 ## Respaldo en Google Drive
 
 Todo lo que se genera queda guardado en la carpeta **RESPALDO SUELDOS CUBELLS** de Google Drive,
