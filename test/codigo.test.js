@@ -535,20 +535,19 @@ test('el formulario recibe los feriados de la quincena con su motivo', () => {
   assert.deepStrictEqual(get(ctx, { accion: 'datos' }).resultado.feriados, []);
 });
 
-test('control de obras del mes: al menos un trabajador con 8 horas', () => {
+test('control de obras del mes: al menos 1 hora', () => {
   const mes = [
     { trabajador: 'Ana', obra: 'Summit', horas: 90 },
-    { trabajador: 'Beto', obra: 'Gala', horas: 4 }, { trabajador: 'Caro', obra: 'Gala', horas: 5 }, // 9 h, pero nadie llega a 8
-    { trabajador: 'Ana', obra: 'Wave', horas: 8 },                                                  // justo 8: OK
-    { trabajador: 'Beto', obra: 'Horas extra', horas: 20 },                                         // no cuenta
-    { trabajador: 'Caro', obra: 'Otra: Galpón', horas: 3 }                                           // no es obra de la lista
+    { trabajador: 'Beto', obra: 'Gala', horas: 1 },               // justo 1: OK
+    { trabajador: 'Caro', obra: 'Wave', horas: 0.5 },             // menos de 1
+    { trabajador: 'Beto', obra: 'Horas extra', horas: 20 },       // no cuenta
+    { trabajador: 'Caro', obra: 'Otra: Galpón', horas: 3 }        // no es obra de la lista
   ];
-  const r = JSON.parse(JSON.stringify(G.obrasSinMinimoDelMes(mes, ['Summit', 'Gala', 'Wave', 'Ventus'])));
-  assert.deepStrictEqual(r, [
-    { obra: 'Gala', horas: 9, maximo: 5, trabajador: 'Caro' },
-    { obra: 'Ventus', horas: 0, maximo: 0, trabajador: '' }
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(G.obrasSinHorasDelMes(mes, ['Summit', 'Gala', 'Wave', 'Ventus']))), [
+    { obra: 'Ventus', horas: 0 },
+    { obra: 'Wave', horas: 0.5 }
   ]);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(G.obrasSinMinimoDelMes(mes, ['Summit', 'Wave']))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(G.obrasSinHorasDelMes(mes, ['Summit', 'Gala']))), []);
 });
 
 test('el control de obras sale en el JORNAL de fin de mes y en el menú', () => {
@@ -561,11 +560,12 @@ test('el control de obras sale en el JORNAL de fin de mes y en el menú', () => 
   assert.doesNotMatch(dialogos.at(-1)[1], /Control de obras/);
   ctx.controlObrasDelMes(); // a pedido, aunque el mes no terminó
   assert.match(dialogos.at(-1)[1], /todavía no terminó/);
-  assert.match(dialogos.at(-1)[1], /2 obras no llegan.*Casa Carrasco<\/b>: 7 h en total; el que más hizo: Juan Pérez con 7 h.*Local Centro<\/b>: sin horas/);
+  assert.match(dialogos.at(-1)[1], /1 obra activa no tiene horas en el mes:.*<li><b>Local Centro<\/b><\/li>/);
+  assert.doesNotMatch(dialogos.at(-1)[1], /Casa Carrasco/); // 7 h alcanzan
 
   cfg.getRange('B2').setValue(ctx.isoAFecha('2026-10-16'));
   cfg.getRange('B3').setValue(ctx.isoAFecha('2026-10-31'));
   ctx.guardarRespuesta({ trabajador: 'Ana Gómez', items: [{ obra: 'Casa Carrasco', horas: 40 }, { obra: 'Local Centro', horas: 56 }] });
   ctx.generarJornales();
-  assert.match(dialogos.at(-1)[1], /Control de obras del mes 10\/2026:<\/b> todas las obras activas tienen al menos un trabajador con 8 horas/);
+  assert.match(dialogos.at(-1)[1], /Control de obras del mes 10\/2026:<\/b> todas las obras activas tienen horas/);
 });

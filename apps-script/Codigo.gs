@@ -24,8 +24,8 @@ var HOJA = {
 // Horario normal por día de la semana (0 = domingo ... 6 = sábado)
 var HORAS_POR_DIA = { 1: 9, 2: 9, 3: 9, 4: 9, 5: 8 };
 
-// Mínimo de horas que cada obra activa tiene que tener en el mes, de al menos un trabajador
-var MINIMO_HORAS_OBRA_MES = 8;
+// Mínimo de horas que cada obra activa tiene que tener en el mes (entre todos los trabajadores)
+var MINIMO_HORAS_OBRA_MES = 1;
 
 // Horas que equivalen a un día para ticket, descanso pago y viático
 var HORAS_JORNADA = 8;
@@ -388,24 +388,18 @@ function esFinDeMes(iso) {
  * las respuestas del mes >= horas normales del mes.
  */
 /**
- * Control de obras del mes: cada obra activa necesita al menos un trabajador con
- * MINIMO_HORAS_OBRA_MES horas o más en el mes (sin horas extra).
- * Devuelve las que no cumplen: [{obra, horas, maximo, trabajador}] (horas = total de la obra;
- * maximo = horas del trabajador que más hizo, trabajador = su nombre).
+ * Control de obras del mes: cada obra activa tiene que tener al menos MINIMO_HORAS_OBRA_MES horas
+ * en el mes (sin horas extra). Devuelve las que no llegan: [{obra, horas}] ordenado por obra.
  */
-function obrasSinMinimoDelMes(respuestasMes, obras) {
-  var porObra = Object.create(null);
+function obrasSinHorasDelMes(respuestasMes, obras) {
+  var horas = Object.create(null);
   respuestasMes.forEach(function (r) {
     if (r.obra === FILA_EXTRA || !(r.horas > 0)) return;
-    var o = porObra[r.obra] = porObra[r.obra] || Object.create(null);
-    o[r.trabajador] = (o[r.trabajador] || 0) + r.horas;
+    horas[r.obra] = (horas[r.obra] || 0) + r.horas;
   });
-  return obras.slice().sort(compararTexto).map(function (obra) {
-    var t = porObra[obra] || Object.create(null);
-    var nombres = Object.keys(t).sort(function (a, b) { return (t[b] - t[a]) || compararTexto(a, b); });
-    var total = nombres.reduce(function (s, n) { return s + t[n]; }, 0);
-    return { obra: obra, horas: redondear(total), maximo: nombres.length ? redondear(t[nombres[0]]) : 0, trabajador: nombres[0] || '' };
-  }).filter(function (o) { return o.maximo < MINIMO_HORAS_OBRA_MES; });
+  return obras.slice().sort(compararTexto)
+    .map(function (obra) { return { obra: obra, horas: redondear(horas[obra] || 0) }; })
+    .filter(function (o) { return o.horas < MINIMO_HORAS_OBRA_MES; });
 }
 
 function trabajadoresMesCompleto(respuestasMes, horasDelMes) {
@@ -625,18 +619,16 @@ function respuestasDelMes(cfg) {
 
 /** Texto HTML del control de obras del mes que termina en cfg.hasta (lo que va hasta esa fecha). */
 function htmlControlObras_(cfg) {
-  var faltan = obrasSinMinimoDelMes(respuestasDelMes(cfg), obrasActivas());
+  var faltan = obrasSinHorasDelMes(respuestasDelMes(cfg), obrasActivas());
   var mes = isoATexto(cfg.hasta).slice(3);
   if (!faltan.length) {
-    return '<p style="color:#0d6b37"><b>Control de obras del mes ' + mes + ':</b> todas las obras activas tienen al menos un ' +
-      'trabajador con ' + MINIMO_HORAS_OBRA_MES + ' horas o más.</p>';
+    return '<p style="color:#0d6b37"><b>Control de obras del mes ' + mes + ':</b> todas las obras activas tienen horas.</p>';
   }
-  return '<p style="color:#b3261e"><b>Control de obras del mes ' + mes + ':</b> ' + faltan.length +
-    (faltan.length === 1 ? ' obra no llega' : ' obras no llegan') + ' a ' + MINIMO_HORAS_OBRA_MES +
-    ' horas de un mismo trabajador:</p><ul style="color:#b3261e;margin-top:0">' +
+  return '<p style="color:#b3261e"><b>Control de obras del mes ' + mes + ':</b> ' +
+    (faltan.length === 1 ? '1 obra activa no tiene horas' : faltan.length + ' obras activas no tienen horas') +
+    ' en el mes:</p><ul style="color:#b3261e;margin-top:0">' +
     faltan.map(function (o) {
-      return '<li><b>' + escaparHtml(o.obra) + '</b>: ' + (o.horas ? o.horas + ' h en total; el que más hizo: ' +
-        escaparHtml(o.trabajador) + ' con ' + o.maximo + ' h' : 'sin horas') + '</li>';
+      return '<li><b>' + escaparHtml(o.obra) + '</b>' + (o.horas ? ': solo ' + String(o.horas).replace('.', ',') + ' h' : '') + '</li>';
     }).join('') + '</ul>';
 }
 
