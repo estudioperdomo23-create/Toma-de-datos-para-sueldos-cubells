@@ -569,3 +569,16 @@ test('el control de obras sale en el JORNAL de fin de mes y en el menú', () => 
   ctx.generarJornales();
   assert.match(dialogos.at(-1)[1], /Control de obras del mes 10\/2026:<\/b> todas las obras activas tienen horas/);
 });
+
+test('link para enviar el pedido de horas desde el celular', () => {
+  const { ctx, hoja } = prepararLibro();
+  const cfg = hoja('Configuración');
+  assert.strictEqual(cfg.getRange('A10').getValue(), 'Enviar pedido de horas (desde el celular)');
+  const f = cfg.getRange('B10').getValue();
+  assert.strictEqual(f, ctx.FORMULA_ENVIAR);
+  assert.match(f, /^=HYPERLINK\("https:\/\/wa\.me\/\?text="&ENCODEURL\(/);
+  // Volver a instalar no lo pisa
+  cfg.getRange('B10').setValue('otra cosa');
+  ctx.instalar();
+  assert.strictEqual(cfg.getRange('B10').getValue(), 'otra cosa');
+});

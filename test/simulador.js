@@ -62,6 +62,7 @@ class Rango {
     return this;
   }
 }
+Rango.prototype.setFormula = function (f) { this.h.set(this.f, this.c, f); return this; };
 Rango.prototype.clearContent = function () {
   for (let i = 0; i < this.nf; i++) for (let j = 0; j < this.nc; j++) this.h.set(this.f + i, this.c + j, '');
   return this;

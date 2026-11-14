@@ -64,7 +64,15 @@ var MENSAJE_PREDETERMINADO =
   'Hola {nombre}, por favor cargá tus horas de la quincena del {desde} al {hasta} en este link: {link}';
 
 // Filas fijas de la hoja Configuración (columna B)
-var CFG = { DESDE: 2, HASTA: 3, LINK: 4, MENSAJE: 5, PEDIR_CEDULA: 6 };
+var CFG = { DESDE: 2, HASTA: 3, LINK: 4, MENSAJE: 5, PEDIR_CEDULA: 6, ENVIAR: 10 };
+
+// Link para mandar el pedido de horas desde el celular (la app de Sheets no muestra el menú Horas).
+// Arma el mensaje de Configuración con las fechas y el link de la quincena, sin nombre, y abre WhatsApp
+// para elegir el grupo, la lista de difusión o el contacto. Se actualiza solo al cambiar las fechas.
+var FORMULA_ENVIAR = '=HYPERLINK("https://wa.me/?text="&ENCODEURL(' +
+  'SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(B5," {nombre}",""),"{nombre}",""),' +
+  '"{desde}",TEXT(B2,"dd/mm/yyyy")),"{hasta}",TEXT(B3,"dd/mm/yyyy")),"{link}",B4)),' +
+  '"📲 Tocar acá para enviar por WhatsApp")';
 
 // Intentos de cédula equivocados tolerados (en total) cada 10 minutos, para frenar a quien pruebe números
 var MAX_FALLOS_CEDULA = 30;
@@ -481,6 +489,11 @@ function instalar() {
     cfg.getRange('A8').setValue('Horario normal: lunes a jueves 9 h, viernes 8 h. Los feriados se cargan en la hoja "Feriados".')
       .setFontStyle('italic');
     cfg.setColumnWidth(1, 170); cfg.setColumnWidth(2, 420);
+  }
+
+  if (!cfg.getRange(CFG.ENVIAR, 1).getValue()) {
+    cfg.getRange(CFG.ENVIAR, 1).setValue('Enviar pedido de horas (desde el celular)').setFontWeight('bold');
+    cfg.getRange(CFG.ENVIAR, 2).setFormula(FORMULA_ENVIAR);
   }
 
   if (!cfg.getRange(CFG.PEDIR_CEDULA, 1).getValue()) {

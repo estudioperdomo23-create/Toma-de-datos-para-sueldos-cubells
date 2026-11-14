@@ -121,6 +121,13 @@ un **1** quien trabajó todas las horas normales del mes (sus horas en obras de 
 sin horas extra, llegan a lunes a jueves 9 h y viernes 8 h del mes, sin feriados). Va solo en la
 planilla de su obra con más horas en la quincena.
 
+## Enviar el pedido de horas desde el celular
+
+En la app de Google Sheets del celular no aparece el menú **Horas**. Para mandar el pedido desde
+ahí: hoja **Configuración**, fila 10, **📲 Tocar acá para enviar por WhatsApp**. Se abre WhatsApp
+con el mensaje de la fila 5 ya armado (fechas de la quincena y link del formulario) y se elige el
+grupo, la lista de difusión o el contacto. El link se actualiza solo cuando cambian las fechas.
+
 ## Control de obras del mes
 
 Cada obra activa tiene que tener en el mes al menos **1 hora** (de cualquier trabajador, sumando
